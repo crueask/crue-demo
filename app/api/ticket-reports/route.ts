@@ -65,12 +65,14 @@ export async function POST(request: NextRequest) {
       let projectId = body.tour_id;
       let stopId = body.tour_stop_id;
 
-      // Get default organization (first one for now - in production you'd use the API key to determine org)
-      const { data: org } = await supabase
-        .from("organizations")
-        .select("id")
+      // Get organization that has members (the active org)
+      const { data: orgMember } = await supabase
+        .from("organization_members")
+        .select("organization_id")
         .limit(1)
         .single();
+
+      const org = orgMember ? { id: orgMember.organization_id } : null;
 
       if (!org) {
         return NextResponse.json(
