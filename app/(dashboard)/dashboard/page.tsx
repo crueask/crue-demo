@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -14,11 +15,16 @@ interface ProjectWithStats {
   revenue: number;
 }
 
-async function getDashboardData(supabase: Awaited<ReturnType<typeof createClient>>) {
+async function getDashboardData() {
+  // Use regular client to get authenticated user
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: membership } = await supabase
+  // Use admin client for data queries (bypasses RLS)
+  const adminClient = createAdminClient();
+
+  const { data: membership } = await adminClient
     .from("organization_members")
     .select("organization_id")
     .eq("user_id", user.id)
@@ -28,7 +34,7 @@ async function getDashboardData(supabase: Awaited<ReturnType<typeof createClient
 
   const orgId = membership.organization_id;
 
-  const { data: projects } = await supabase
+  const { data: projects } = await adminClient
     .from("projects")
     .select("*")
     .eq("organization_id", orgId)
@@ -38,7 +44,7 @@ async function getDashboardData(supabase: Awaited<ReturnType<typeof createClient
 
   const projectsWithStats: ProjectWithStats[] = await Promise.all(
     projects.map(async (project) => {
-      const { data: stops } = await supabase
+      const { data: stops } = await adminClient
         .from("stops")
         .select("id, capacity")
         .eq("project_id", project.id);
@@ -47,14 +53,14 @@ async function getDashboardData(supabase: Awaited<ReturnType<typeof createClient
       const totalCapacity = stops?.reduce((sum, s) => sum + (s.capacity || 0), 0) || 0;
 
       const { data: shows } = stopIds.length > 0
-        ? await supabase.from("shows").select("id, capacity").in("stop_id", stopIds)
+        ? await adminClient.from("shows").select("id, capacity").in("stop_id", stopIds)
         : { data: [] };
 
       const showIds = shows?.map(s => s.id) || [];
       const showCapacity = shows?.reduce((sum, s) => sum + (s.capacity || 0), 0) || 0;
 
       const { data: tickets } = showIds.length > 0
-        ? await supabase.from("tickets").select("quantity_sold, revenue").in("show_id", showIds)
+        ? await adminClient.from("tickets").select("quantity_sold, revenue").in("show_id", showIds)
         : { data: [] };
 
       const ticketsSold = tickets?.reduce((sum, t) => sum + t.quantity_sold, 0) || 0;
@@ -88,8 +94,7 @@ async function getDashboardData(supabase: Awaited<ReturnType<typeof createClient
 }
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
-  const data = await getDashboardData(supabase);
+  const data = await getDashboardData();
 
   const stats = data?.stats || {
     ticketsToday: 0,
