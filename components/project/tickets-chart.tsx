@@ -91,22 +91,39 @@ export function TicketsChart({ data, entities, title, height = 200 }: TicketsCha
           />
           <ReferenceLine y={0} stroke="#E5E7EB" />
           <ChartTooltip
-            content={
-              <ChartTooltipContent
-                labelFormatter={(value) => formatDate(value as string)}
-                formatter={(value, name, item) => {
-                  const entityIndex = entities.findIndex(e => e.id === name);
-                  const entityName = entities[entityIndex]?.name || name;
-                  const color = ENTITY_COLORS[entityIndex % ENTITY_COLORS.length];
-                  return (
-                    <span style={{ color }}>
-                      {formatNumber(Number(value))} {entityName}
-                    </span>
-                  );
-                }}
-                hideIndicator
-              />
-            }
+            content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null;
+
+              return (
+                <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 min-w-[180px]">
+                  <p className="text-sm font-medium text-gray-900 mb-2 border-b border-gray-100 pb-2">
+                    {formatDate(label)}
+                  </p>
+                  <div className="space-y-1.5">
+                    {payload.map((entry, index) => {
+                      const entityIndex = entities.findIndex(e => e.id === entry.dataKey);
+                      const entityName = entities[entityIndex]?.name || entry.dataKey;
+                      const color = ENTITY_COLORS[entityIndex % ENTITY_COLORS.length];
+
+                      return (
+                        <div key={index} className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                              style={{ backgroundColor: color }}
+                            />
+                            <span className="text-sm text-gray-600">{entityName}</span>
+                          </div>
+                          <span className="text-sm font-semibold" style={{ color }}>
+                            {formatNumber(Number(entry.value))}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }}
           />
           {entities.map((entity, index) => (
             <Bar
