@@ -13,18 +13,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, Plus, MoreHorizontal, Pencil, Trash2, Share } from "lucide-react";
+import { ArrowLeft, MoreHorizontal, Pencil, Trash2, Share } from "lucide-react";
 import { StopAccordion } from "@/components/project/stop-accordion";
 import { ShareDialog } from "@/components/project/share-dialog";
 
@@ -67,16 +65,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [project, setProject] = useState<Project | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // New stop form state
-  const [isStopDialogOpen, setIsStopDialogOpen] = useState(false);
-  const [newStopName, setNewStopName] = useState("");
-  const [newStopVenue, setNewStopVenue] = useState("");
-  const [newStopCity, setNewStopCity] = useState("");
-  const [newStopCountry, setNewStopCountry] = useState("");
-  const [newStopCapacity, setNewStopCapacity] = useState("");
-  const [newStopNotes, setNewStopNotes] = useState("");
-  const [creating, setCreating] = useState(false);
 
   // Edit project dialog
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -156,37 +144,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
 
     setLoading(false);
-  }
-
-  async function handleCreateStop(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newStopName.trim() || !newStopVenue.trim() || !newStopCity.trim()) return;
-
-    setCreating(true);
-
-    const supabase = createClient();
-    const { error } = await supabase.from("stops").insert({
-      project_id: id,
-      name: newStopName.trim(),
-      venue: newStopVenue.trim(),
-      city: newStopCity.trim(),
-      country: newStopCountry.trim() || null,
-      capacity: newStopCapacity ? parseInt(newStopCapacity) : null,
-      notes: newStopNotes.trim() || null,
-    });
-
-    if (!error) {
-      setNewStopName("");
-      setNewStopVenue("");
-      setNewStopCity("");
-      setNewStopCountry("");
-      setNewStopCapacity("");
-      setNewStopNotes("");
-      setIsStopDialogOpen(false);
-      loadProjectData();
-    }
-
-    setCreating(false);
   }
 
   async function handleUpdateProject(e: React.FormEvent) {
@@ -347,107 +304,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Turnéstopp</h2>
-          <Dialog open={isStopDialogOpen} onOpenChange={setIsStopDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Legg til stopp
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <form onSubmit={handleCreateStop}>
-                <DialogHeader>
-                  <DialogTitle>Legg til nytt stopp</DialogTitle>
-                  <DialogDescription>
-                    Legg til et nytt spillested for {project.name}.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="stop_name">Stoppnavn</Label>
-                    <Input
-                      id="stop_name"
-                      placeholder="f.eks. Bergen"
-                      value={newStopName}
-                      onChange={(e) => setNewStopName(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="venue">Spillested</Label>
-                    <Input
-                      id="venue"
-                      placeholder="f.eks. Grieghallen"
-                      value={newStopVenue}
-                      onChange={(e) => setNewStopVenue(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="city">By</Label>
-                      <Input
-                        id="city"
-                        placeholder="f.eks. Bergen"
-                        value={newStopCity}
-                        onChange={(e) => setNewStopCity(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="country">Land</Label>
-                      <Input
-                        id="country"
-                        placeholder="f.eks. Norge"
-                        value={newStopCountry}
-                        onChange={(e) => setNewStopCountry(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="capacity">Kapasitet</Label>
-                    <Input
-                      id="capacity"
-                      type="number"
-                      placeholder="f.eks. 1500"
-                      value={newStopCapacity}
-                      onChange={(e) => setNewStopCapacity(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="notes">Notater</Label>
-                    <Textarea
-                      id="notes"
-                      placeholder="Eventuelle notater..."
-                      value={newStopNotes}
-                      onChange={(e) => setNewStopNotes(e.target.value)}
-                      rows={3}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setIsStopDialogOpen(false)}>
-                    Avbryt
-                  </Button>
-                  <Button type="submit" disabled={creating || !newStopName.trim() || !newStopVenue.trim() || !newStopCity.trim()}>
-                    {creating ? "Legger til..." : "Legg til stopp"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
         </div>
 
         {stops.length === 0 ? (
           <div className="bg-white rounded-lg border border-dashed border-gray-300 p-12 text-center">
             <h3 className="text-lg font-medium text-gray-900 mb-2">Ingen stopp ennå</h3>
-            <p className="text-gray-500 mb-4">
-              Legg til ditt første turnéstopp for å begynne.
+            <p className="text-gray-500">
+              Stopp opprettes automatisk når du sender inn rapporter via API.
             </p>
-            <Button onClick={() => setIsStopDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Legg til stopp
-            </Button>
           </div>
         ) : (
           <div className="space-y-3">

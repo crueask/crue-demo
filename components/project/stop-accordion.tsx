@@ -14,20 +14,29 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
   ChevronDown,
   ChevronUp,
-  Plus,
   MoreHorizontal,
-  Ticket,
+  FileText,
+  Trash2,
+  Pencil,
 } from "lucide-react";
+
+interface Ticket {
+  id: string;
+  quantity_sold: number;
+  revenue: number;
+  source: string | null;
+  created_at: string;
+}
 
 interface Show {
   id: string;
@@ -60,21 +69,19 @@ interface StopAccordionProps {
 export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  // Show dialog state
-  const [isShowDialogOpen, setIsShowDialogOpen] = useState(false);
-  const [newShowDate, setNewShowDate] = useState("");
-  const [newShowTime, setNewShowTime] = useState("");
-  const [newShowCapacity, setNewShowCapacity] = useState("");
-  const [newShowNotes, setNewShowNotes] = useState("");
-  const [creating, setCreating] = useState(false);
-
-  // Ticket dialog state
-  const [isTicketDialogOpen, setIsTicketDialogOpen] = useState(false);
+  // Reports dialog state
+  const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
   const [selectedShowId, setSelectedShowId] = useState<string | null>(null);
-  const [ticketQuantity, setTicketQuantity] = useState("");
-  const [ticketRevenue, setTicketRevenue] = useState("");
-  const [ticketSource, setTicketSource] = useState("");
-  const [addingTicket, setAddingTicket] = useState(false);
+  const [selectedShowName, setSelectedShowName] = useState("");
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loadingTickets, setLoadingTickets] = useState(false);
+
+  // Edit report state
+  const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
+  const [editQuantity, setEditQuantity] = useState("");
+  const [editRevenue, setEditRevenue] = useState("");
+  const [editSource, setEditSource] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const totalTicketsSold = stop.shows.reduce((sum, s) => sum + s.tickets_sold, 0);
   const totalCapacity = stop.shows.reduce((sum, s) => sum + (s.capacity || 0), 0);
@@ -82,6 +89,14 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
 
   const formatNumber = (value: number) => {
     return new Intl.NumberFormat("nb-NO").format(value);
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("nb-NO", {
+      style: "decimal",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value) + " kr";
   };
 
   const formatDate = (dateStr: string) => {
@@ -93,63 +108,106 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     });
   };
 
+  const formatDateTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("nb-NO", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   const formatTime = (timeStr: string | null) => {
     if (!timeStr) return "";
     return `kl. ${timeStr.slice(0, 5)}`;
   };
 
-  async function handleCreateShow(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newShowDate) return;
-
-    setCreating(true);
-
+  async function loadTickets(showId: string) {
+    setLoadingTickets(true);
     const supabase = createClient();
-    const { error } = await supabase.from("shows").insert({
-      stop_id: stop.id,
-      date: newShowDate,
-      time: newShowTime || null,
-      capacity: newShowCapacity ? parseInt(newShowCapacity) : (stop.capacity || null),
-      notes: newShowNotes.trim() || null,
-      status: "upcoming",
-    });
 
-    if (!error) {
-      setNewShowDate("");
-      setNewShowTime("");
-      setNewShowCapacity("");
-      setNewShowNotes("");
-      setIsShowDialogOpen(false);
-      onDataChange();
-    }
+    const { data } = await supabase
+      .from("tickets")
+      .select("*")
+      .eq("show_id", showId)
+      .order("created_at", { ascending: false });
 
-    setCreating(false);
+    setTickets(data || []);
+    setLoadingTickets(false);
   }
 
-  async function handleAddTickets(e: React.FormEvent) {
-    e.preventDefault();
-    if (!selectedShowId || !ticketQuantity || !ticketRevenue) return;
-
-    setAddingTicket(true);
-
-    const supabase = createClient();
-    const { error } = await supabase.from("tickets").insert({
-      show_id: selectedShowId,
-      quantity_sold: parseInt(ticketQuantity),
-      revenue: parseFloat(ticketRevenue),
-      source: ticketSource.trim() || "Manual Entry",
-    });
-
-    if (!error) {
-      setTicketQuantity("");
-      setTicketRevenue("");
-      setTicketSource("");
-      setSelectedShowId(null);
-      setIsTicketDialogOpen(false);
-      onDataChange();
+  async function handleDeleteShow(showId: string) {
+    if (!confirm("Er du sikker på at du vil slette dette showet? Dette vil også slette alle rapporter.")) {
+      return;
     }
 
-    setAddingTicket(false);
+    const supabase = createClient();
+    await supabase.from("shows").delete().eq("id", showId);
+    onDataChange();
+  }
+
+  async function handleDeleteStop() {
+    if (!confirm("Er du sikker på at du vil slette dette stoppet? Dette vil også slette alle show og rapporter.")) {
+      return;
+    }
+
+    const supabase = createClient();
+    await supabase.from("stops").delete().eq("id", stop.id);
+    onDataChange();
+  }
+
+  async function handleDeleteTicket(ticketId: string) {
+    if (!confirm("Er du sikker på at du vil slette denne rapporten?")) {
+      return;
+    }
+
+    const supabase = createClient();
+    await supabase.from("tickets").delete().eq("id", ticketId);
+
+    if (selectedShowId) {
+      loadTickets(selectedShowId);
+    }
+    onDataChange();
+  }
+
+  async function handleUpdateTicket(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingTicket) return;
+
+    setSaving(true);
+
+    const supabase = createClient();
+    await supabase
+      .from("tickets")
+      .update({
+        quantity_sold: parseInt(editQuantity),
+        revenue: parseFloat(editRevenue),
+        source: editSource.trim() || null,
+      })
+      .eq("id", editingTicket.id);
+
+    setEditingTicket(null);
+
+    if (selectedShowId) {
+      loadTickets(selectedShowId);
+    }
+    onDataChange();
+    setSaving(false);
+  }
+
+  function openReportsDialog(show: Show) {
+    setSelectedShowId(show.id);
+    setSelectedShowName(`${formatDate(show.date)} ${stop.name}`);
+    loadTickets(show.id);
+    setIsReportsDialogOpen(true);
+  }
+
+  function startEditTicket(ticket: Ticket) {
+    setEditingTicket(ticket);
+    setEditQuantity(ticket.quantity_sold.toString());
+    setEditRevenue(ticket.revenue.toString());
+    setEditSource(ticket.source || "");
   }
 
   return (
@@ -169,8 +227,21 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
           </div>
           <Progress value={fillRate} className="h-2 bg-gray-100" />
         </div>
-        <div className="ml-4 text-gray-400">
-          {isOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+        <div className="ml-4 flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleDeleteStop} className="text-red-600">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Slett stopp
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {isOpen ? <ChevronUp className="h-5 w-5 text-gray-400" /> : <ChevronDown className="h-5 w-5 text-gray-400" />}
         </div>
       </button>
 
@@ -183,22 +254,11 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
               <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                 Show
               </span>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsShowDialogOpen(true);
-                }}
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Legg til show
-              </Button>
             </div>
 
             {stop.shows.length === 0 ? (
               <p className="text-sm text-gray-500 py-4 text-center">
-                Ingen show ennå. Legg til ditt første show.
+                Ingen show ennå. Show opprettes automatisk via API.
               </p>
             ) : (
               stop.shows.map((show) => {
@@ -240,14 +300,17 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openReportsDialog(show)}>
+                          <FileText className="mr-2 h-4 w-4" />
+                          Se rapporter
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem
-                          onClick={() => {
-                            setSelectedShowId(show.id);
-                            setIsTicketDialogOpen(true);
-                          }}
+                          onClick={() => handleDeleteShow(show.id)}
+                          className="text-red-600"
                         >
-                          <Ticket className="mr-2 h-4 w-4" />
-                          Legg til billetter
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Slett show
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -259,121 +322,142 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
         </div>
       )}
 
-      {/* Add Show Dialog */}
-      <Dialog open={isShowDialogOpen} onOpenChange={setIsShowDialogOpen}>
-        <DialogContent>
-          <form onSubmit={handleCreateShow}>
-            <DialogHeader>
-              <DialogTitle>Legg til nytt show</DialogTitle>
-              <DialogDescription>
-                Legg til en forestilling på {stop.venue}.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="show_date">Dato</Label>
-                  <Input
-                    id="show_date"
-                    type="date"
-                    value={newShowDate}
-                    onChange={(e) => setNewShowDate(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="show_time">Tid (valgfritt)</Label>
-                  <Input
-                    id="show_time"
-                    type="time"
-                    value={newShowTime}
-                    onChange={(e) => setNewShowTime(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="show_capacity">
-                  Kapasitet {stop.capacity && `(standard: ${formatNumber(stop.capacity)})`}
-                </Label>
-                <Input
-                  id="show_capacity"
-                  type="number"
-                  placeholder={stop.capacity?.toString() || "Angi kapasitet"}
-                  value={newShowCapacity}
-                  onChange={(e) => setNewShowCapacity(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="show_notes">Notater</Label>
-                <Textarea
-                  id="show_notes"
-                  placeholder="Eventuelle notater..."
-                  value={newShowNotes}
-                  onChange={(e) => setNewShowNotes(e.target.value)}
-                  rows={3}
-                />
-              </div>
+      {/* Reports Management Dialog */}
+      <Dialog open={isReportsDialogOpen} onOpenChange={setIsReportsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Rapporter - {selectedShowName}</DialogTitle>
+            <DialogDescription>
+              Se og administrer billettsalgsrapporter for dette showet.
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingTickets ? (
+            <div className="py-8 text-center text-gray-500">Laster rapporter...</div>
+          ) : tickets.length === 0 ? (
+            <div className="py-8 text-center text-gray-500">
+              Ingen rapporter registrert for dette showet.
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsShowDialogOpen(false)}>
-                Avbryt
-              </Button>
-              <Button type="submit" disabled={creating || !newShowDate}>
-                {creating ? "Legger til..." : "Legg til show"}
-              </Button>
-            </DialogFooter>
-          </form>
+          ) : (
+            <div className="max-h-96 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-medium text-gray-500">Dato</th>
+                    <th className="text-right py-2 px-3 font-medium text-gray-500">Antall</th>
+                    <th className="text-right py-2 px-3 font-medium text-gray-500">Inntekt</th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-500">Kilde</th>
+                    <th className="text-right py-2 px-3 font-medium text-gray-500">Handlinger</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {tickets.map((ticket) => (
+                    <tr key={ticket.id} className="hover:bg-gray-50">
+                      <td className="py-2 px-3 text-gray-600">
+                        {formatDateTime(ticket.created_at)}
+                      </td>
+                      <td className="py-2 px-3 text-right text-gray-900">
+                        {formatNumber(ticket.quantity_sold)}
+                      </td>
+                      <td className="py-2 px-3 text-right text-gray-900">
+                        {formatCurrency(ticket.revenue)}
+                      </td>
+                      <td className="py-2 px-3 text-gray-600">
+                        {ticket.source || "-"}
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => startEditTicket(ticket)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-red-600 hover:text-red-700"
+                            onClick={() => handleDeleteTicket(ticket.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-gray-50 border-t">
+                  <tr>
+                    <td className="py-2 px-3 font-medium text-gray-900">Totalt</td>
+                    <td className="py-2 px-3 text-right font-medium text-gray-900">
+                      {formatNumber(tickets.reduce((sum, t) => sum + t.quantity_sold, 0))}
+                    </td>
+                    <td className="py-2 px-3 text-right font-medium text-gray-900">
+                      {formatCurrency(tickets.reduce((sum, t) => sum + Number(t.revenue), 0))}
+                    </td>
+                    <td colSpan={2}></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsReportsDialogOpen(false)}>
+              Lukk
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Add Tickets Dialog */}
-      <Dialog open={isTicketDialogOpen} onOpenChange={setIsTicketDialogOpen}>
+      {/* Edit Ticket Dialog */}
+      <Dialog open={!!editingTicket} onOpenChange={(open) => !open && setEditingTicket(null)}>
         <DialogContent>
-          <form onSubmit={handleAddTickets}>
+          <form onSubmit={handleUpdateTicket}>
             <DialogHeader>
-              <DialogTitle>Legg til billettsalg</DialogTitle>
-              <DialogDescription>Registrer billettsalg for dette showet.</DialogDescription>
+              <DialogTitle>Rediger rapport</DialogTitle>
+              <DialogDescription>Oppdater billettsalgsrapporten.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="ticket_quantity">Antall billetter solgt</Label>
+                <Label htmlFor="edit_quantity">Antall billetter solgt</Label>
                 <Input
-                  id="ticket_quantity"
+                  id="edit_quantity"
                   type="number"
-                  placeholder="f.eks. 500"
-                  value={ticketQuantity}
-                  onChange={(e) => setTicketQuantity(e.target.value)}
+                  value={editQuantity}
+                  onChange={(e) => setEditQuantity(e.target.value)}
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="ticket_revenue">Inntekt (kr)</Label>
+                <Label htmlFor="edit_revenue">Inntekt (kr)</Label>
                 <Input
-                  id="ticket_revenue"
+                  id="edit_revenue"
                   type="number"
                   step="0.01"
-                  placeholder="f.eks. 350000"
-                  value={ticketRevenue}
-                  onChange={(e) => setTicketRevenue(e.target.value)}
+                  value={editRevenue}
+                  onChange={(e) => setEditRevenue(e.target.value)}
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="ticket_source">Kilde (valgfritt)</Label>
+                <Label htmlFor="edit_source">Kilde</Label>
                 <Input
-                  id="ticket_source"
+                  id="edit_source"
                   placeholder="f.eks. Ticketmaster, Billettservice, etc."
-                  value={ticketSource}
-                  onChange={(e) => setTicketSource(e.target.value)}
+                  value={editSource}
+                  onChange={(e) => setEditSource(e.target.value)}
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsTicketDialogOpen(false)}>
+              <Button type="button" variant="outline" onClick={() => setEditingTicket(null)}>
                 Avbryt
               </Button>
-              <Button type="submit" disabled={addingTicket || !ticketQuantity || !ticketRevenue}>
-                {addingTicket ? "Legger til..." : "Legg til billetter"}
+              <Button type="submit" disabled={saving || !editQuantity || !editRevenue}>
+                {saving ? "Lagrer..." : "Lagre endringer"}
               </Button>
             </DialogFooter>
           </form>
