@@ -142,11 +142,11 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     setLoadingCharts(true);
     const supabase = createClient();
 
-    // Initialize last 14 days
+    // Initialize last 14 days (ending at yesterday, since tickets are processed the day after)
     const chartDataByDate: Record<string, Record<string, number>> = {};
     for (let i = 0; i < 14; i++) {
       const date = new Date();
-      date.setDate(date.getDate() - (13 - i));
+      date.setDate(date.getDate() - 1 - (13 - i)); // -1 to end at yesterday
       const dateStr = date.toISOString().split("T")[0];
       chartDataByDate[dateStr] = {};
       for (const show of stop.shows) {
@@ -195,11 +195,11 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
 
     const supabase = createClient();
 
-    // Initialize last 14 days for single show
+    // Initialize last 14 days for single show (ending at yesterday)
     const chartDataByDate: Record<string, number> = {};
     for (let i = 0; i < 14; i++) {
       const date = new Date();
-      date.setDate(date.getDate() - (13 - i));
+      date.setDate(date.getDate() - 1 - (13 - i)); // -1 to end at yesterday
       const dateStr = date.toISOString().split("T")[0];
       chartDataByDate[dateStr] = 0;
     }

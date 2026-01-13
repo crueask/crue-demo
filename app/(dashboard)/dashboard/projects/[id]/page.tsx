@@ -154,10 +154,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       // Load chart data - daily deltas grouped by stop
       const chartDataByDate: Record<string, Record<string, number>> = {};
 
-      // Initialize last 14 days
+      // Initialize last 14 days (ending at yesterday, since tickets are processed the day after)
       for (let i = 0; i < 14; i++) {
         const date = new Date();
-        date.setDate(date.getDate() - (13 - i));
+        date.setDate(date.getDate() - 1 - (13 - i)); // -1 to end at yesterday
         const dateStr = date.toISOString().split("T")[0];
         chartDataByDate[dateStr] = {};
         for (const stop of stopsWithShows) {

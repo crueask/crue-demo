@@ -58,6 +58,9 @@ interface TicketReportPayload {
   // Date attribution
   sale_date?: string;         // Actual date tickets were sold (defaults to yesterday)
   sales_start_date?: string;  // When sales started for this show (for initial distribution)
+
+  // Distribution control
+  distribute_initial?: boolean;  // Default: true - spread first report across sales period
 }
 
 export async function POST(request: NextRequest) {
@@ -253,62 +256,75 @@ export async function POST(request: NextRequest) {
       saleDate = yesterday.toISOString().split("T")[0];
     }
 
-    // Insert ticket data
-    // Try with sale_date first, fall back to without if column doesn't exist
-    let ticket;
-    let ticketError;
-
-    const ticketData: Record<string, unknown> = {
-      show_id: showId,
-      quantity_sold: body.tickets_sold,
-      revenue: body.gross_revenue,
-      source: body.source || "API Import",
-    };
-
-    // Try with sale_date
-    const result1 = await supabase
+    // Check if this is the first report for this show (for distribution logic)
+    const { count: existingTicketCount } = await supabase
       .from("tickets")
-      .insert({ ...ticketData, sale_date: saleDate })
-      .select()
+      .select("*", { count: "exact", head: true })
+      .eq("show_id", showId);
+
+    const isFirstReport = existingTicketCount === 0;
+
+    // Get show's sales_start_date for distribution
+    const { data: showData } = await supabase
+      .from("shows")
+      .select("sales_start_date")
+      .eq("id", showId)
       .single();
 
-    if (result1.error) {
-      // If it's a column not found error, try without sale_date
-      if (result1.error.message?.includes("sale_date") || result1.error.code === "42703") {
-        console.warn("sale_date column not found, inserting without it. Run migration 007_sale_date.sql to add the column.");
-        const result2 = await supabase
-          .from("tickets")
-          .insert(ticketData)
-          .select()
-          .single();
+    const salesStartDate = showData?.sales_start_date;
 
-        ticket = result2.data;
-        ticketError = result2.error;
-      } else {
-        ticketError = result1.error;
-      }
+    // Determine if we should distribute tickets across the sales period
+    const shouldDistribute =
+      isFirstReport &&
+      salesStartDate &&
+      body.distribute_initial !== false &&
+      saleDate > salesStartDate;
+
+    let ticketResult;
+
+    if (shouldDistribute) {
+      // Distribute tickets linearly across sales_start_date → sale_date
+      ticketResult = await createDistributedSnapshots(
+        showId!,
+        salesStartDate,
+        saleDate,
+        body.tickets_sold,
+        body.gross_revenue,
+        body.source || "API Import (distributed)"
+      );
     } else {
-      ticket = result1.data;
+      // Single record (current behavior)
+      ticketResult = await createSingleTicketRecord(
+        showId!,
+        saleDate,
+        body.tickets_sold,
+        body.gross_revenue,
+        body.source || "API Import"
+      );
     }
 
-    if (ticketError) {
-      console.error("Error creating ticket:", ticketError);
+    if (ticketResult.error) {
+      console.error("Error creating ticket:", ticketResult.error);
       return NextResponse.json(
-        { error: "Failed to create ticket record", details: ticketError.message },
+        { error: "Failed to create ticket record", details: ticketResult.error },
         { status: 500 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: "Ticket report received",
+      message: shouldDistribute
+        ? `Ticket report received and distributed across ${ticketResult.recordsCreated} days`
+        : "Ticket report received",
       data: {
-        ticket_id: ticket.id,
+        ticket_id: ticketResult.ticketId,
         show_id: showId,
         stop_id: stopId,
         project_id: projectId,
         tickets_sold: body.tickets_sold,
         gross_revenue: body.gross_revenue,
+        distributed: shouldDistribute,
+        records_created: ticketResult.recordsCreated,
       },
     });
 
@@ -520,6 +536,130 @@ async function createShow(
   return newShow.id;
 }
 
+// Helper: Create a single ticket record
+async function createSingleTicketRecord(
+  showId: string,
+  saleDate: string,
+  ticketsSold: number,
+  revenue: number,
+  source: string
+): Promise<{ ticketId: string | null; recordsCreated: number; error: string | null }> {
+  const ticketData: Record<string, unknown> = {
+    show_id: showId,
+    quantity_sold: ticketsSold,
+    revenue: revenue,
+    source: source,
+  };
+
+  // Try with sale_date first
+  const result1 = await supabase
+    .from("tickets")
+    .insert({ ...ticketData, sale_date: saleDate })
+    .select()
+    .single();
+
+  if (result1.error) {
+    // If it's a column not found error, try without sale_date
+    if (result1.error.message?.includes("sale_date") || result1.error.code === "42703") {
+      console.warn("sale_date column not found. Run migration 007_sale_date.sql to add the column.");
+      const result2 = await supabase
+        .from("tickets")
+        .insert(ticketData)
+        .select()
+        .single();
+
+      if (result2.error) {
+        return { ticketId: null, recordsCreated: 0, error: result2.error.message };
+      }
+      return { ticketId: result2.data.id, recordsCreated: 1, error: null };
+    }
+    return { ticketId: null, recordsCreated: 0, error: result1.error.message };
+  }
+
+  return { ticketId: result1.data.id, recordsCreated: 1, error: null };
+}
+
+// Helper: Create distributed ticket snapshots across a date range
+async function createDistributedSnapshots(
+  showId: string,
+  salesStartDate: string,
+  saleDate: string,
+  totalTickets: number,
+  totalRevenue: number,
+  source: string
+): Promise<{ ticketId: string | null; recordsCreated: number; error: string | null }> {
+  const start = new Date(salesStartDate);
+  const end = new Date(saleDate);
+  const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+  if (days <= 1) {
+    // Just create single record if same day or invalid range
+    return createSingleTicketRecord(showId, saleDate, totalTickets, totalRevenue, source);
+  }
+
+  const ticketsPerDay = Math.floor(totalTickets / days);
+  const revenuePerDay = totalRevenue / days;
+  const ticketRemainder = totalTickets % days;
+
+  const records: Array<{
+    show_id: string;
+    quantity_sold: number;
+    revenue: number;
+    source: string;
+    sale_date: string;
+  }> = [];
+
+  let cumTickets = 0;
+  let cumRevenue = 0;
+
+  for (let i = 0; i < days; i++) {
+    const date = new Date(start);
+    date.setDate(date.getDate() + i);
+    const dateStr = date.toISOString().split("T")[0];
+
+    // Front-load remainder on first day
+    const dayTickets = ticketsPerDay + (i === 0 ? ticketRemainder : 0);
+    const dayRevenue = i === 0
+      ? revenuePerDay + (totalTickets > 0 ? (revenuePerDay * ticketRemainder / totalTickets) * days : 0)
+      : revenuePerDay;
+
+    cumTickets += dayTickets;
+    cumRevenue += dayRevenue;
+
+    records.push({
+      show_id: showId,
+      quantity_sold: cumTickets,
+      revenue: Math.round(cumRevenue * 100) / 100, // Round to 2 decimals
+      source: source,
+      sale_date: dateStr,
+    });
+  }
+
+  // Try to insert with sale_date
+  const result = await supabase
+    .from("tickets")
+    .insert(records)
+    .select();
+
+  if (result.error) {
+    // If sale_date column doesn't exist, try without it
+    if (result.error.message?.includes("sale_date") || result.error.code === "42703") {
+      console.warn("sale_date column not found. Run migration 007_sale_date.sql for distribution to work properly.");
+      // Fall back to single record without distribution
+      return createSingleTicketRecord(showId, saleDate, totalTickets, totalRevenue, source);
+    }
+    return { ticketId: null, recordsCreated: 0, error: result.error.message };
+  }
+
+  // Return the last record's ID (the final cumulative snapshot)
+  const lastRecord = result.data?.[result.data.length - 1];
+  return {
+    ticketId: lastRecord?.id || null,
+    recordsCreated: records.length,
+    error: null,
+  };
+}
+
 // GET endpoint to check API status
 export async function GET() {
   return NextResponse.json({
@@ -551,11 +691,13 @@ export async function GET() {
       source: "string (optional)",
       sale_date: "ISO date string (optional - actual date tickets were sold, defaults to yesterday)",
       sales_start_date: "ISO date string (optional - when sales started for this show)",
+      distribute_initial: "boolean (optional - default true, set false to disable automatic distribution for first report)",
     },
     notes: {
       lookup_priority: "notion_id > uuid > create new",
       metadata_updates: "When entity found, provided metadata fields will update the entity",
       date_attribution: "sale_date defaults to yesterday. Use sales_start_date on new shows to indicate when sales began for initial distribution.",
+      smart_distribution: "For the first report of a show: if sales_start_date is set and sale_date > sales_start_date, tickets are distributed linearly across the period. Use distribute_initial=false to disable.",
     },
   });
 }

@@ -162,10 +162,10 @@ async function getDashboardData() {
   // Aggregate deltas by date and project
   const ticketsByDateAndProject: Record<string, Record<string, number>> = {};
 
-  // Initialize all 14 days
+  // Initialize all 14 days (ending at yesterday, since tickets are processed the day after)
   for (let i = 0; i < 14; i++) {
     const date = new Date();
-    date.setDate(date.getDate() - (13 - i));
+    date.setDate(date.getDate() - 1 - (13 - i)); // -1 to end at yesterday
     const dateStr = date.toISOString().split('T')[0];
     ticketsByDateAndProject[dateStr] = {};
     for (const project of projectsWithStats) {
