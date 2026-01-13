@@ -151,6 +151,7 @@ export interface Database {
           status: "upcoming" | "completed" | "cancelled";
           notes: string | null;
           notion_id: string | null;
+          sales_start_date: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -164,6 +165,7 @@ export interface Database {
           status?: "upcoming" | "completed" | "cancelled";
           notes?: string | null;
           notion_id?: string | null;
+          sales_start_date?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -177,6 +179,7 @@ export interface Database {
           status?: "upcoming" | "completed" | "cancelled";
           notes?: string | null;
           notion_id?: string | null;
+          sales_start_date?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -191,6 +194,7 @@ export interface Database {
           ticket_type: string | null;
           price_tier: string | null;
           reported_at: string;
+          sale_date: string | null;
           created_at: string;
         };
         Insert: {
@@ -202,6 +206,7 @@ export interface Database {
           ticket_type?: string | null;
           price_tier?: string | null;
           reported_at?: string;
+          sale_date?: string | null;
           created_at?: string;
         };
         Update: {
@@ -213,6 +218,7 @@ export interface Database {
           ticket_type?: string | null;
           price_tier?: string | null;
           reported_at?: string;
+          sale_date?: string | null;
           created_at?: string;
         };
       };

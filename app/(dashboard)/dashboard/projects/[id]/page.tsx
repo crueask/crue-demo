@@ -25,6 +25,7 @@ import {
 import { ArrowLeft, MoreHorizontal, Pencil, Trash2, Share } from "lucide-react";
 import { StopAccordion } from "@/components/project/stop-accordion";
 import { ShareDialog } from "@/components/project/share-dialog";
+import { TicketsChart } from "@/components/project/tickets-chart";
 
 interface Project {
   id: string;
@@ -59,11 +60,17 @@ interface Stop {
   shows: Show[];
 }
 
+interface ChartDataPoint {
+  date: string;
+  [stopId: string]: string | number;
+}
+
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Edit project dialog
@@ -116,18 +123,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           const showsWithTickets = showsData
             ? await Promise.all(
                 showsData.map(async (show) => {
-                  const { data: tickets } = await supabase
+                  // Get the LATEST ticket snapshot for this show (not sum of all)
+                  const { data: latestTicket } = await supabase
                     .from("tickets")
                     .select("quantity_sold, revenue")
-                    .eq("show_id", show.id);
-
-                  const ticketsSold = tickets?.reduce((sum, t) => sum + t.quantity_sold, 0) || 0;
-                  const revenue = tickets?.reduce((sum, t) => sum + Number(t.revenue), 0) || 0;
+                    .eq("show_id", show.id)
+                    .order("sale_date", { ascending: false, nullsFirst: false })
+                    .order("reported_at", { ascending: false })
+                    .limit(1)
+                    .single();
 
                   return {
                     ...show,
-                    tickets_sold: ticketsSold,
-                    revenue: revenue,
+                    tickets_sold: latestTicket?.quantity_sold || 0,
+                    revenue: latestTicket ? Number(latestTicket.revenue) : 0,
                   };
                 })
               )
@@ -141,6 +150,56 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       );
 
       setStops(stopsWithShows);
+
+      // Load chart data - daily deltas grouped by stop
+      const chartDataByDate: Record<string, Record<string, number>> = {};
+
+      // Initialize last 14 days
+      for (let i = 0; i < 14; i++) {
+        const date = new Date();
+        date.setDate(date.getDate() - (13 - i));
+        const dateStr = date.toISOString().split("T")[0];
+        chartDataByDate[dateStr] = {};
+        for (const stop of stopsWithShows) {
+          chartDataByDate[dateStr][stop.id] = 0;
+        }
+      }
+
+      // Calculate deltas for each show and aggregate by stop
+      for (const stop of stopsWithShows) {
+        for (const show of stop.shows) {
+          const { data: ticketSnapshots } = await supabase
+            .from("tickets")
+            .select("quantity_sold, sale_date, reported_at")
+            .eq("show_id", show.id)
+            .order("sale_date", { ascending: true, nullsFirst: false })
+            .order("reported_at", { ascending: true });
+
+          if (ticketSnapshots && ticketSnapshots.length > 0) {
+            let previousTotal = 0;
+            for (const snapshot of ticketSnapshots) {
+              const dateStr = snapshot.sale_date || snapshot.reported_at?.split("T")[0];
+              if (dateStr && chartDataByDate[dateStr]) {
+                const delta = snapshot.quantity_sold - previousTotal;
+                if (delta > 0) {
+                  chartDataByDate[dateStr][stop.id] += delta;
+                }
+              }
+              previousTotal = snapshot.quantity_sold;
+            }
+          }
+        }
+      }
+
+      // Convert to chart format
+      const formattedChartData = Object.entries(chartDataByDate)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, stops]) => ({
+          date,
+          ...stops,
+        }));
+
+      setChartData(formattedChartData);
     }
 
     setLoading(false);
@@ -299,6 +358,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           <Progress value={fillRate} className="h-2 bg-gray-100" />
         </div>
       </div>
+
+      {/* Ticket sales chart by stop */}
+      {stops.length > 0 && (
+        <TicketsChart
+          data={chartData}
+          entities={stops.map((s) => ({ id: s.id, name: s.name }))}
+          title="Billettutvikling per turnéstopp (siste 14 dager)"
+          height={280}
+        />
+      )}
 
       {/* Turnéstopp section */}
       <div className="space-y-4">

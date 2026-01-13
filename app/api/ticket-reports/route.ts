@@ -10,6 +10,24 @@ const supabase = createClient(
 // Simple API key auth - set this in your environment
 const API_KEY = process.env.TICKET_REPORTS_API_KEY;
 
+// Helper: Parse ISO datetime (e.g., "2025-12-17T19:00:00.000+01:00") and extract date + time
+// Preserves the local time from the string, doesn't convert to UTC
+function parseDateTime(dateTimeStr: string): { date: string; time: string | null } {
+  // Try to match ISO format with time: YYYY-MM-DDTHH:MM:SS
+  const isoMatch = dateTimeStr.match(/^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}))?/);
+  if (isoMatch) {
+    return {
+      date: isoMatch[1],
+      time: isoMatch[2] || null,
+    };
+  }
+  // Fallback: just use the string as date
+  return {
+    date: dateTimeStr.split("T")[0],
+    time: null,
+  };
+}
+
 interface TicketReportPayload {
   // Entity IDs (UUID) - now optional if using Notion IDs
   show_id?: string;
@@ -36,6 +54,10 @@ interface TicketReportPayload {
   show_time?: string;
   capacity?: number;
   source?: string;
+
+  // Date attribution
+  sale_date?: string;         // Actual date tickets were sold (defaults to yesterday)
+  sales_start_date?: string;  // When sales started for this show (for initial distribution)
 }
 
 export async function POST(request: NextRequest) {
@@ -170,7 +192,8 @@ export async function POST(request: NextRequest) {
         body.show_name,
         body.show_date,
         body.show_time,
-        body.capacity
+        body.capacity,
+        body.sales_start_date
       );
     } else {
       // Step 3: Update existing entities with new metadata
@@ -200,9 +223,18 @@ export async function POST(request: NextRequest) {
       if (showId) {
         const showUpdates: Record<string, string | number | null> = {};
         if (body.show_name) showUpdates.name = body.show_name;
-        if (body.show_date) showUpdates.date = body.show_date;
+        if (body.show_date) {
+          // Parse ISO datetime to extract date and time
+          const parsed = parseDateTime(body.show_date);
+          showUpdates.date = parsed.date;
+          // Only update time from datetime if no explicit show_time provided
+          if (!body.show_time && parsed.time) {
+            showUpdates.time = parsed.time;
+          }
+        }
         if (body.show_time) showUpdates.time = body.show_time;
         if (body.capacity !== undefined) showUpdates.capacity = body.capacity;
+        if (body.sales_start_date) showUpdates.sales_start_date = body.sales_start_date;
 
         if (Object.keys(showUpdates).length > 0) {
           await supabase
@@ -213,6 +245,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Calculate sale_date (defaults to yesterday if not provided)
+    let saleDate = body.sale_date;
+    if (!saleDate) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      saleDate = yesterday.toISOString().split("T")[0];
+    }
+
     // Insert ticket data
     const { data: ticket, error: ticketError } = await supabase
       .from("tickets")
@@ -221,6 +261,7 @@ export async function POST(request: NextRequest) {
         quantity_sold: body.tickets_sold,
         revenue: body.gross_revenue,
         source: body.source || "API Import",
+        sale_date: saleDate,
       })
       .select()
       .single();
@@ -412,15 +453,23 @@ async function createShow(
   name?: string,
   date?: string,
   time?: string,
-  capacity?: number
+  capacity?: number,
+  salesStartDate?: string
 ): Promise<string> {
-  const showDate = date
-    ? new Date(date).toISOString().split("T")[0]
-    : new Date().toISOString().split("T")[0];
+  let showDate: string;
+  let showTime: string | null = time || null;
 
-  const showTime = time || (date
-    ? new Date(date).toISOString().split("T")[1]?.substring(0, 5)
-    : null);
+  if (date) {
+    // Parse ISO datetime to extract date and time (preserves local time)
+    const parsed = parseDateTime(date);
+    showDate = parsed.date;
+    // Only use parsed time if no explicit time provided
+    if (!time && parsed.time) {
+      showTime = parsed.time;
+    }
+  } else {
+    showDate = new Date().toISOString().split("T")[0];
+  }
 
   const { data: newShow, error } = await supabase
     .from("shows")
@@ -433,6 +482,7 @@ async function createShow(
       status: "upcoming",
       name: name || null,
       notion_id: notionId || null,
+      sales_start_date: salesStartDate || null,
     })
     .select()
     .single();
@@ -474,10 +524,13 @@ export async function GET() {
       show_time: "HH:MM string (optional)",
       capacity: "number (optional)",
       source: "string (optional)",
+      sale_date: "ISO date string (optional - actual date tickets were sold, defaults to yesterday)",
+      sales_start_date: "ISO date string (optional - when sales started for this show)",
     },
     notes: {
       lookup_priority: "notion_id > uuid > create new",
       metadata_updates: "When entity found, provided metadata fields will update the entity",
+      date_attribution: "sale_date defaults to yesterday. Use sales_start_date on new shows to indicate when sales began for initial distribution.",
     },
   });
 }

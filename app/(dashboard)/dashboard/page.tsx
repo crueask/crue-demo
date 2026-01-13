@@ -60,12 +60,27 @@ async function getDashboardData() {
       const showIds = shows?.map(s => s.id) || [];
       const showCapacity = shows?.reduce((sum, s) => sum + (s.capacity || 0), 0) || 0;
 
-      const { data: tickets } = showIds.length > 0
-        ? await adminClient.from("tickets").select("quantity_sold, revenue").in("show_id", showIds)
-        : { data: [] };
+      // Get the LATEST ticket report for each show (snapshots, not deltas)
+      let ticketsSold = 0;
+      let revenue = 0;
 
-      const ticketsSold = tickets?.reduce((sum, t) => sum + t.quantity_sold, 0) || 0;
-      const revenue = tickets?.reduce((sum, t) => sum + Number(t.revenue), 0) || 0;
+      if (showIds.length > 0) {
+        for (const showId of showIds) {
+          const { data: latestTicket } = await adminClient
+            .from("tickets")
+            .select("quantity_sold, revenue")
+            .eq("show_id", showId)
+            .order("sale_date", { ascending: false, nullsFirst: false })
+            .order("reported_at", { ascending: false })
+            .limit(1)
+            .single();
+
+          if (latestTicket) {
+            ticketsSold += latestTicket.quantity_sold;
+            revenue += Number(latestTicket.revenue);
+          }
+        }
+      }
 
       return {
         id: project.id,
@@ -84,15 +99,7 @@ async function getDashboardData() {
   const totalRevenueWeek = projectsWithStats.reduce((sum, p) => sum + p.revenue, 0);
 
   // Get ticket data for the chart (last 14 days)
-  const fourteenDaysAgo = new Date();
-  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-  const fourteenDaysAgoStr = fourteenDaysAgo.toISOString().split('T')[0];
-
-  // Query all tickets with their show/stop/project hierarchy
-  const { data: allTickets } = await adminClient
-    .from("tickets")
-    .select("quantity_sold, reported_at, show_id")
-    .gte("reported_at", fourteenDaysAgoStr);
+  // We need to show daily deltas - the difference in cumulative totals between days
 
   // Build a map of show_id to project_id
   const showToProject: Record<string, string> = {};
@@ -118,7 +125,41 @@ async function getDashboardData() {
     }
   }
 
-  // Aggregate tickets by date and project
+  // Get all shows for projects
+  const allShowIds = Object.keys(showToProject);
+
+  // For each show, get all ticket snapshots ordered by sale_date
+  // Then calculate daily deltas
+  const dailyDeltasByShowAndDate: Record<string, Record<string, number>> = {};
+
+  for (const showId of allShowIds) {
+    const { data: ticketSnapshots } = await adminClient
+      .from("tickets")
+      .select("quantity_sold, sale_date, reported_at")
+      .eq("show_id", showId)
+      .order("sale_date", { ascending: true, nullsFirst: false })
+      .order("reported_at", { ascending: true });
+
+    if (ticketSnapshots && ticketSnapshots.length > 0) {
+      let previousTotal = 0;
+      for (const snapshot of ticketSnapshots) {
+        const dateStr = snapshot.sale_date || snapshot.reported_at?.split('T')[0];
+        if (dateStr) {
+          const delta = snapshot.quantity_sold - previousTotal;
+          if (!dailyDeltasByShowAndDate[showId]) {
+            dailyDeltasByShowAndDate[showId] = {};
+          }
+          // If there's already a delta for this date, use the larger cumulative value
+          if (!dailyDeltasByShowAndDate[showId][dateStr] || delta > dailyDeltasByShowAndDate[showId][dateStr]) {
+            dailyDeltasByShowAndDate[showId][dateStr] = delta > 0 ? delta : 0;
+          }
+          previousTotal = snapshot.quantity_sold;
+        }
+      }
+    }
+  }
+
+  // Aggregate deltas by date and project
   const ticketsByDateAndProject: Record<string, Record<string, number>> = {};
 
   // Initialize all 14 days
@@ -132,13 +173,14 @@ async function getDashboardData() {
     }
   }
 
-  // Fill in actual ticket data
-  if (allTickets) {
-    for (const ticket of allTickets) {
-      const dateStr = ticket.reported_at?.split('T')[0];
-      const projectId = showToProject[ticket.show_id];
-      if (dateStr && projectId && ticketsByDateAndProject[dateStr]) {
-        ticketsByDateAndProject[dateStr][projectId] += ticket.quantity_sold;
+  // Fill in daily deltas by project
+  for (const [showId, dateDeltas] of Object.entries(dailyDeltasByShowAndDate)) {
+    const projectId = showToProject[showId];
+    if (projectId) {
+      for (const [dateStr, delta] of Object.entries(dateDeltas)) {
+        if (ticketsByDateAndProject[dateStr]) {
+          ticketsByDateAndProject[dateStr][projectId] += delta;
+        }
       }
     }
   }
@@ -151,11 +193,30 @@ async function getDashboardData() {
       ...projects,
     }));
 
+  // Calculate yesterday's tickets from the chart data
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const yesterdayData = ticketsByDateAndProject[yesterdayStr];
+  const ticketsYesterday = yesterdayData
+    ? Object.values(yesterdayData).reduce((sum, val) => sum + val, 0)
+    : 0;
+
+  // Calculate last 7 days tickets from the chart data (deltas)
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  let ticketsLast7Days = 0;
+  for (const [dateStr, projectData] of Object.entries(ticketsByDateAndProject)) {
+    if (dateStr >= sevenDaysAgo.toISOString().split('T')[0]) {
+      ticketsLast7Days += Object.values(projectData).reduce((sum, val) => sum + val, 0);
+    }
+  }
+
   return {
     projects: projectsWithStats,
     stats: {
-      ticketsToday: Math.floor(totalTicketsWeek * 0.15),
-      ticketsWeek: totalTicketsWeek,
+      ticketsToday: ticketsYesterday,
+      ticketsWeek: ticketsLast7Days,
       revenueWeek: totalRevenueWeek,
       activeProjects,
     },

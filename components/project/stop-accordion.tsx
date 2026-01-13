@@ -24,11 +24,13 @@ import {
 import {
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   MoreHorizontal,
   FileText,
   Trash2,
   Pencil,
 } from "lucide-react";
+import { TicketsChart } from "@/components/project/tickets-chart";
 
 interface Ticket {
   id: string;
@@ -66,8 +68,19 @@ interface StopAccordionProps {
   onDataChange: () => void;
 }
 
+interface ChartDataPoint {
+  date: string;
+  [key: string]: string | number;
+}
+
 export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
   const [isOpen, setIsOpen] = useState(false);
+
+  // Chart data state
+  const [stopChartData, setStopChartData] = useState<ChartDataPoint[]>([]);
+  const [showChartData, setShowChartData] = useState<Record<string, ChartDataPoint[]>>({});
+  const [expandedShows, setExpandedShows] = useState<Set<string>>(new Set());
+  const [loadingCharts, setLoadingCharts] = useState(false);
 
   // Reports dialog state
   const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
@@ -122,6 +135,131 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     if (!timeStr) return "";
     return `kl. ${timeStr.slice(0, 5)}`;
   };
+
+  async function loadStopChartData() {
+    if (stopChartData.length > 0) return; // Already loaded
+
+    setLoadingCharts(true);
+    const supabase = createClient();
+
+    // Initialize last 14 days
+    const chartDataByDate: Record<string, Record<string, number>> = {};
+    for (let i = 0; i < 14; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() - (13 - i));
+      const dateStr = date.toISOString().split("T")[0];
+      chartDataByDate[dateStr] = {};
+      for (const show of stop.shows) {
+        chartDataByDate[dateStr][show.id] = 0;
+      }
+    }
+
+    // Calculate deltas for each show
+    for (const show of stop.shows) {
+      const { data: ticketSnapshots } = await supabase
+        .from("tickets")
+        .select("quantity_sold, sale_date, reported_at")
+        .eq("show_id", show.id)
+        .order("sale_date", { ascending: true, nullsFirst: false })
+        .order("reported_at", { ascending: true });
+
+      if (ticketSnapshots && ticketSnapshots.length > 0) {
+        let previousTotal = 0;
+        for (const snapshot of ticketSnapshots) {
+          const dateStr = snapshot.sale_date || snapshot.reported_at?.split("T")[0];
+          if (dateStr && chartDataByDate[dateStr]) {
+            const delta = snapshot.quantity_sold - previousTotal;
+            if (delta > 0) {
+              chartDataByDate[dateStr][show.id] += delta;
+            }
+          }
+          previousTotal = snapshot.quantity_sold;
+        }
+      }
+    }
+
+    // Convert to chart format
+    const formattedData = Object.entries(chartDataByDate)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, shows]) => ({
+        date,
+        ...shows,
+      }));
+
+    setStopChartData(formattedData);
+    setLoadingCharts(false);
+  }
+
+  async function loadShowChartData(showId: string) {
+    if (showChartData[showId]) return; // Already loaded
+
+    const supabase = createClient();
+
+    // Initialize last 14 days for single show
+    const chartDataByDate: Record<string, number> = {};
+    for (let i = 0; i < 14; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() - (13 - i));
+      const dateStr = date.toISOString().split("T")[0];
+      chartDataByDate[dateStr] = 0;
+    }
+
+    // Get ticket snapshots and calculate deltas
+    const { data: ticketSnapshots } = await supabase
+      .from("tickets")
+      .select("quantity_sold, sale_date, reported_at")
+      .eq("show_id", showId)
+      .order("sale_date", { ascending: true, nullsFirst: false })
+      .order("reported_at", { ascending: true });
+
+    if (ticketSnapshots && ticketSnapshots.length > 0) {
+      let previousTotal = 0;
+      for (const snapshot of ticketSnapshots) {
+        const dateStr = snapshot.sale_date || snapshot.reported_at?.split("T")[0];
+        if (dateStr && chartDataByDate[dateStr] !== undefined) {
+          const delta = snapshot.quantity_sold - previousTotal;
+          if (delta > 0) {
+            chartDataByDate[dateStr] += delta;
+          }
+        }
+        previousTotal = snapshot.quantity_sold;
+      }
+    }
+
+    // Convert to chart format with single entity
+    const formattedData = Object.entries(chartDataByDate)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, tickets]) => ({
+        date,
+        [showId]: tickets,
+      }));
+
+    setShowChartData((prev) => ({
+      ...prev,
+      [showId]: formattedData,
+    }));
+  }
+
+  function toggleShowExpanded(showId: string) {
+    setExpandedShows((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(showId)) {
+        newSet.delete(showId);
+      } else {
+        newSet.add(showId);
+        loadShowChartData(showId);
+      }
+      return newSet;
+    });
+  }
+
+  async function handleToggleOpen() {
+    const newIsOpen = !isOpen;
+    setIsOpen(newIsOpen);
+    if (newIsOpen) {
+      loadStopChartData();
+    }
+  }
 
   async function loadTickets(showId: string) {
     setLoadingTickets(true);
@@ -214,7 +352,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     <div className="bg-white rounded-lg border border-gray-200">
       {/* Header - clickable */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggleOpen}
         className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
       >
         <div className="flex-1">
@@ -248,8 +386,29 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
       {/* Expanded content */}
       {isOpen && (
         <div className="px-4 pb-4 border-t border-gray-100">
+          {/* Stop-level chart grouped by shows */}
+          {stop.shows.length > 0 && (
+            <div className="mt-4 mb-6">
+              {loadingCharts ? (
+                <div className="h-[180px] flex items-center justify-center text-sm text-gray-500">
+                  Laster graf...
+                </div>
+              ) : (
+                <TicketsChart
+                  data={stopChartData}
+                  entities={stop.shows.map((s) => ({
+                    id: s.id,
+                    name: `${formatDate(s.date)}`,
+                  }))}
+                  title="Billettutvikling per show"
+                  height={180}
+                />
+              )}
+            </div>
+          )}
+
           {/* Shows list */}
-          <div className="mt-4 space-y-2">
+          <div className="space-y-2">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                 Show
@@ -265,55 +424,86 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                 const showFillRate = show.capacity
                   ? Math.round((show.tickets_sold / show.capacity) * 100)
                   : 0;
+                const isShowExpanded = expandedShows.has(show.id);
 
                 return (
-                  <div
-                    key={show.id}
-                    className="flex items-center gap-4 py-3 border-b border-gray-50 last:border-0"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="font-medium text-gray-900">
-                          {formatDate(show.date)} {stop.name}
-                        </span>
-                        {show.time && (
-                          <span className="text-gray-500">{formatTime(show.time)}</span>
+                  <div key={show.id} className="border border-gray-100 rounded-lg">
+                    {/* Show header row */}
+                    <div className="flex items-center gap-4 p-3">
+                      {/* Expand button */}
+                      <button
+                        onClick={() => toggleShowExpanded(show.id)}
+                        className="p-1 hover:bg-gray-100 rounded transition-colors"
+                      >
+                        {isShowExpanded ? (
+                          <ChevronDown className="h-4 w-4 text-gray-400" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                        )}
+                      </button>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium text-gray-900">
+                            {formatDate(show.date)} {stop.name}
+                          </span>
+                          {show.time && (
+                            <span className="text-gray-500">{formatTime(show.time)}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="w-32">
+                        <Progress value={showFillRate} className="h-1.5 bg-gray-100" />
+                      </div>
+                      <div className="w-12 text-right text-sm text-gray-500">
+                        {showFillRate}%
+                      </div>
+                      <div className="w-20 text-right text-sm text-gray-900">
+                        {formatNumber(show.tickets_sold)}
+                        {show.capacity && (
+                          <span className="text-gray-400">/{formatNumber(show.capacity)}</span>
                         )}
                       </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openReportsDialog(show)}>
+                            <FileText className="mr-2 h-4 w-4" />
+                            Se rapporter
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteShow(show.id)}
+                            className="text-red-600"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Slett show
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                    <div className="w-32">
-                      <Progress value={showFillRate} className="h-1.5 bg-gray-100" />
-                    </div>
-                    <div className="w-12 text-right text-sm text-gray-500">
-                      {showFillRate}%
-                    </div>
-                    <div className="w-20 text-right text-sm text-gray-900">
-                      {formatNumber(show.tickets_sold)}
-                      {show.capacity && (
-                        <span className="text-gray-400">/{formatNumber(show.capacity)}</span>
-                      )}
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openReportsDialog(show)}>
-                          <FileText className="mr-2 h-4 w-4" />
-                          Se rapporter
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => handleDeleteShow(show.id)}
-                          className="text-red-600"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Slett show
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+
+                    {/* Expanded show chart */}
+                    {isShowExpanded && (
+                      <div className="px-3 pb-3 pt-1 border-t border-gray-50">
+                        {showChartData[show.id] ? (
+                          <TicketsChart
+                            data={showChartData[show.id]}
+                            entities={[{ id: show.id, name: "Billetter" }]}
+                            title={`Billettutvikling - ${formatDate(show.date)}`}
+                            height={150}
+                          />
+                        ) : (
+                          <div className="h-[150px] flex items-center justify-center text-sm text-gray-500">
+                            Laster graf...
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })

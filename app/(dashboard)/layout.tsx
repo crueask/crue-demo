@@ -26,6 +26,12 @@ export default async function DashboardLayout({
             </Link>
             <div className="flex items-center gap-4">
               <Link
+                href="/dashboard/reports"
+                className="text-sm text-gray-600 hover:text-gray-900"
+              >
+                Rapporter
+              </Link>
+              <Link
                 href="/dashboard/chat"
                 className="text-sm text-gray-600 hover:text-gray-900"
               >
