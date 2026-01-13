@@ -254,22 +254,47 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert ticket data
-    const { data: ticket, error: ticketError } = await supabase
+    // Try with sale_date first, fall back to without if column doesn't exist
+    let ticket;
+    let ticketError;
+
+    const ticketData: Record<string, unknown> = {
+      show_id: showId,
+      quantity_sold: body.tickets_sold,
+      revenue: body.gross_revenue,
+      source: body.source || "API Import",
+    };
+
+    // Try with sale_date
+    const result1 = await supabase
       .from("tickets")
-      .insert({
-        show_id: showId,
-        quantity_sold: body.tickets_sold,
-        revenue: body.gross_revenue,
-        source: body.source || "API Import",
-        sale_date: saleDate,
-      })
+      .insert({ ...ticketData, sale_date: saleDate })
       .select()
       .single();
+
+    if (result1.error) {
+      // If it's a column not found error, try without sale_date
+      if (result1.error.message?.includes("sale_date") || result1.error.code === "42703") {
+        console.warn("sale_date column not found, inserting without it. Run migration 007_sale_date.sql to add the column.");
+        const result2 = await supabase
+          .from("tickets")
+          .insert(ticketData)
+          .select()
+          .single();
+
+        ticket = result2.data;
+        ticketError = result2.error;
+      } else {
+        ticketError = result1.error;
+      }
+    } else {
+      ticket = result1.data;
+    }
 
     if (ticketError) {
       console.error("Error creating ticket:", ticketError);
       return NextResponse.json(
-        { error: "Failed to create ticket record" },
+        { error: "Failed to create ticket record", details: ticketError.message },
         { status: 500 }
       );
     }
