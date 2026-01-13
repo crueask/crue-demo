@@ -64,6 +64,7 @@ export interface Database {
           currency: string;
           share_slug: string | null;
           share_enabled: boolean;
+          notion_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -78,6 +79,7 @@ export interface Database {
           currency?: string;
           share_slug?: string | null;
           share_enabled?: boolean;
+          notion_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -92,6 +94,7 @@ export interface Database {
           currency?: string;
           share_slug?: string | null;
           share_enabled?: boolean;
+          notion_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -106,6 +109,7 @@ export interface Database {
           country: string | null;
           capacity: number | null;
           notes: string | null;
+          notion_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -118,6 +122,7 @@ export interface Database {
           country?: string | null;
           capacity?: number | null;
           notes?: string | null;
+          notion_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -130,6 +135,7 @@ export interface Database {
           country?: string | null;
           capacity?: number | null;
           notes?: string | null;
+          notion_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -143,6 +149,7 @@ export interface Database {
           capacity: number | null;
           status: "upcoming" | "completed" | "cancelled";
           notes: string | null;
+          notion_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -154,6 +161,7 @@ export interface Database {
           capacity?: number | null;
           status?: "upcoming" | "completed" | "cancelled";
           notes?: string | null;
+          notion_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -165,6 +173,7 @@ export interface Database {
           capacity?: number | null;
           status?: "upcoming" | "completed" | "cancelled";
           notes?: string | null;
+          notion_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
