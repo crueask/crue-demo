@@ -94,10 +94,17 @@ export function TicketsChart({ data, entities, title, height = 200 }: TicketsCha
             content={
               <ChartTooltipContent
                 labelFormatter={(value) => formatDate(value as string)}
-                formatter={(value, name) => {
-                  const entityName = entities.find(e => e.id === name)?.name || name;
-                  return [formatNumber(Number(value)), entityName];
+                formatter={(value, name, item) => {
+                  const entityIndex = entities.findIndex(e => e.id === name);
+                  const entityName = entities[entityIndex]?.name || name;
+                  const color = ENTITY_COLORS[entityIndex % ENTITY_COLORS.length];
+                  return (
+                    <span style={{ color }}>
+                      {formatNumber(Number(value))} {entityName}
+                    </span>
+                  );
                 }}
+                hideIndicator
               />
             }
           />
