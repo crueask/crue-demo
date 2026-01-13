@@ -144,6 +144,7 @@ export interface Database {
         Row: {
           id: string;
           stop_id: string;
+          name: string | null;
           date: string;
           time: string | null;
           capacity: number | null;
@@ -156,6 +157,7 @@ export interface Database {
         Insert: {
           id?: string;
           stop_id: string;
+          name?: string | null;
           date: string;
           time?: string | null;
           capacity?: number | null;
@@ -168,6 +170,7 @@ export interface Database {
         Update: {
           id?: string;
           stop_id?: string;
+          name?: string | null;
           date?: string;
           time?: string | null;
           capacity?: number | null;

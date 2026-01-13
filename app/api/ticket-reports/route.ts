@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
 
       if (showId) {
         const showUpdates: Record<string, string | number | null> = {};
-        if (body.show_name) showUpdates.notes = body.show_name;
+        if (body.show_name) showUpdates.name = body.show_name;
         if (body.show_date) showUpdates.date = body.show_date;
         if (body.show_time) showUpdates.time = body.show_time;
         if (body.capacity !== undefined) showUpdates.capacity = body.capacity;
@@ -431,7 +431,7 @@ async function createShow(
       time: showTime,
       capacity: capacity || null,
       status: "upcoming",
-      notes: name || null,
+      name: name || null,
       notion_id: notionId || null,
     })
     .select()
@@ -469,7 +469,7 @@ export async function GET() {
       stop_venue: "string (optional - updates stop venue)",
       stop_city: "string (optional - updates stop city)",
       stop_country: "string (optional - updates stop country)",
-      show_name: "string (optional - show notes)",
+      show_name: "string (optional - updates show name)",
       show_date: "ISO date string (optional)",
       show_time: "HH:MM string (optional)",
       capacity: "number (optional)",
