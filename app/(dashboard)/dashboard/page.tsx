@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Search } from "lucide-react";
+import { TicketsByTourChart } from "@/components/dashboard/tickets-by-tour-chart";
 
 interface ProjectWithStats {
   id: string;
@@ -82,6 +83,74 @@ async function getDashboardData() {
   const totalTicketsWeek = projectsWithStats.reduce((sum, p) => sum + p.ticketsSold, 0);
   const totalRevenueWeek = projectsWithStats.reduce((sum, p) => sum + p.revenue, 0);
 
+  // Get ticket data for the chart (last 14 days)
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+  const fourteenDaysAgoStr = fourteenDaysAgo.toISOString().split('T')[0];
+
+  // Query all tickets with their show/stop/project hierarchy
+  const { data: allTickets } = await adminClient
+    .from("tickets")
+    .select("quantity_sold, reported_at, show_id")
+    .gte("reported_at", fourteenDaysAgoStr);
+
+  // Build a map of show_id to project_id
+  const showToProject: Record<string, string> = {};
+  for (const project of projectsWithStats) {
+    const { data: stops } = await adminClient
+      .from("stops")
+      .select("id")
+      .eq("project_id", project.id);
+
+    if (stops) {
+      for (const stop of stops) {
+        const { data: shows } = await adminClient
+          .from("shows")
+          .select("id")
+          .eq("stop_id", stop.id);
+
+        if (shows) {
+          for (const show of shows) {
+            showToProject[show.id] = project.id;
+          }
+        }
+      }
+    }
+  }
+
+  // Aggregate tickets by date and project
+  const ticketsByDateAndProject: Record<string, Record<string, number>> = {};
+
+  // Initialize all 14 days
+  for (let i = 0; i < 14; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - (13 - i));
+    const dateStr = date.toISOString().split('T')[0];
+    ticketsByDateAndProject[dateStr] = {};
+    for (const project of projectsWithStats) {
+      ticketsByDateAndProject[dateStr][project.id] = 0;
+    }
+  }
+
+  // Fill in actual ticket data
+  if (allTickets) {
+    for (const ticket of allTickets) {
+      const dateStr = ticket.reported_at?.split('T')[0];
+      const projectId = showToProject[ticket.show_id];
+      if (dateStr && projectId && ticketsByDateAndProject[dateStr]) {
+        ticketsByDateAndProject[dateStr][projectId] += ticket.quantity_sold;
+      }
+    }
+  }
+
+  // Convert to chart format
+  const chartData = Object.entries(ticketsByDateAndProject)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, projects]) => ({
+      date,
+      ...projects,
+    }));
+
   return {
     projects: projectsWithStats,
     stats: {
@@ -90,6 +159,7 @@ async function getDashboardData() {
       revenueWeek: totalRevenueWeek,
       activeProjects,
     },
+    chartData,
   };
 }
 
@@ -104,6 +174,10 @@ export default async function DashboardPage() {
   };
 
   const projects = data?.projects || [];
+  const chartData = data?.chartData || [];
+
+  // Prepare projects for chart (just id and name)
+  const chartProjects = projects.map(p => ({ id: p.id, name: p.name }));
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("nb-NO", {
@@ -154,6 +228,11 @@ export default async function DashboardPage() {
           </p>
         </div>
       </div>
+
+      {/* Tickets by Tour Chart */}
+      {chartProjects.length > 0 && (
+        <TicketsByTourChart data={chartData} projects={chartProjects} />
+      )}
 
       {/* Search and Filter */}
       <div className="flex items-center justify-between gap-4">

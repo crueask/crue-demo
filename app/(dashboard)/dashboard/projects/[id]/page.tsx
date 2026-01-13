@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -20,30 +19,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  ArrowLeft,
-  Plus,
-  MapPin,
-  Calendar,
-  Users,
-  Building,
-  ChevronRight,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-} from "lucide-react";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ArrowLeft, Plus, MoreHorizontal, Pencil, Trash2, Share } from "lucide-react";
+import { StopAccordion } from "@/components/project/stop-accordion";
+import { ShareDialog } from "@/components/project/share-dialog";
 
 interface Project {
   id: string;
@@ -55,15 +38,27 @@ interface Project {
   currency: string;
 }
 
+interface Show {
+  id: string;
+  date: string;
+  time: string | null;
+  capacity: number | null;
+  status: "upcoming" | "completed" | "cancelled";
+  notes: string | null;
+  tickets_sold: number;
+  revenue: number;
+}
+
 interface Stop {
   id: string;
+  project_id: string;
   name: string;
   venue: string;
   city: string;
   country: string | null;
   capacity: number | null;
   notes: string | null;
-  shows_count?: number;
+  shows: Show[];
 }
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -86,10 +81,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Edit project dialog
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editProjectName, setEditProjectName] = useState("");
-  const [editProjectStatus, setEditProjectStatus] = useState<string>("active");
-  const [editProjectStartDate, setEditProjectStartDate] = useState("");
-  const [editProjectEndDate, setEditProjectEndDate] = useState("");
   const [updating, setUpdating] = useState(false);
+
+  // Share dialog
+  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
 
   useEffect(() => {
     loadProjectData();
@@ -112,11 +107,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
     setProject(projectData);
     setEditProjectName(projectData.name);
-    setEditProjectStatus(projectData.status);
-    setEditProjectStartDate(projectData.start_date || "");
-    setEditProjectEndDate(projectData.end_date || "");
 
-    // Get stops with show counts
+    // Get stops with shows and ticket data
     const { data: stopsData } = await supabase
       .from("stops")
       .select("*")
@@ -124,21 +116,43 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       .order("created_at", { ascending: false });
 
     if (stopsData) {
-      const stopsWithCounts = await Promise.all(
+      const stopsWithShows = await Promise.all(
         stopsData.map(async (stop) => {
-          const { count } = await supabase
+          // Get shows for this stop
+          const { data: showsData } = await supabase
             .from("shows")
-            .select("*", { count: "exact", head: true })
-            .eq("stop_id", stop.id);
+            .select("*")
+            .eq("stop_id", stop.id)
+            .order("date", { ascending: true });
+
+          const showsWithTickets = showsData
+            ? await Promise.all(
+                showsData.map(async (show) => {
+                  const { data: tickets } = await supabase
+                    .from("tickets")
+                    .select("quantity_sold, revenue")
+                    .eq("show_id", show.id);
+
+                  const ticketsSold = tickets?.reduce((sum, t) => sum + t.quantity_sold, 0) || 0;
+                  const revenue = tickets?.reduce((sum, t) => sum + Number(t.revenue), 0) || 0;
+
+                  return {
+                    ...show,
+                    tickets_sold: ticketsSold,
+                    revenue: revenue,
+                  };
+                })
+              )
+            : [];
 
           return {
             ...stop,
-            shows_count: count || 0,
+            shows: showsWithTickets,
           };
         })
       );
 
-      setStops(stopsWithCounts);
+      setStops(stopsWithShows);
     }
 
     setLoading(false);
@@ -186,9 +200,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       .from("projects")
       .update({
         name: editProjectName.trim(),
-        status: editProjectStatus as "active" | "completed" | "archived",
-        start_date: editProjectStartDate || null,
-        end_date: editProjectEndDate || null,
       })
       .eq("id", id);
 
@@ -201,7 +212,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   async function handleDeleteProject() {
-    if (!confirm("Are you sure you want to delete this project? This will also delete all stops and shows.")) {
+    if (!confirm("Er du sikker på at du vil slette dette prosjektet? Dette vil også slette alle stopp og show.")) {
       return;
     }
 
@@ -213,34 +224,40 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "active":
-        return "bg-green-500/10 text-green-500 border-green-500/20";
-      case "completed":
-        return "bg-blue-500/10 text-blue-500 border-blue-500/20";
-      case "archived":
-        return "bg-gray-500/10 text-gray-500 border-gray-500/20";
-      default:
-        return "";
-    }
+  // Calculate totals
+  const totalShows = stops.reduce((sum, stop) => sum + stop.shows.length, 0);
+  const totalTicketsSold = stops.reduce(
+    (sum, stop) => sum + stop.shows.reduce((s, show) => s + show.tickets_sold, 0),
+    0
+  );
+  const totalCapacity = stops.reduce(
+    (sum, stop) => sum + stop.shows.reduce((s, show) => s + (show.capacity || 0), 0),
+    0
+  );
+  const totalRevenue = stops.reduce(
+    (sum, stop) => sum + stop.shows.reduce((s, show) => s + show.revenue, 0),
+    0
+  );
+  const fillRate = totalCapacity > 0 ? Math.round((totalTicketsSold / totalCapacity) * 100) : 0;
+
+  const formatNumber = (value: number) => {
+    return new Intl.NumberFormat("nb-NO").format(value);
   };
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return null;
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("nb-NO", {
+      style: "decimal",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value) + " kr";
   };
 
   if (loading) {
     return (
       <div className="space-y-6">
         <div className="animate-pulse">
-          <div className="h-8 bg-muted rounded w-1/4 mb-4" />
-          <div className="h-4 bg-muted rounded w-1/2" />
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-4" />
+          <div className="h-4 bg-gray-200 rounded w-1/2" />
         </div>
       </div>
     );
@@ -251,85 +268,116 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* Back link */}
+      <Link
+        href="/dashboard"
+        className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Tilbake til turnéer
+      </Link>
+
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/dashboard/projects">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
-            <Badge className={getStatusColor(project.status)}>{project.status}</Badge>
-          </div>
-          {(project.start_date || project.end_date) && (
-            <p className="text-muted-foreground flex items-center gap-1 mt-1">
-              <Calendar className="h-4 w-4" />
-              {formatDate(project.start_date)}
-              {project.start_date && project.end_date && " - "}
-              {formatDate(project.end_date)}
-            </p>
-          )}
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon">
-              <MoreHorizontal className="h-4 w-4" />
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-start justify-between mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => setIsShareDialogOpen(true)}
+            >
+              <Share className="h-4 w-4" />
+              Del turné
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setIsEditDialogOpen(true)}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit Project
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleDeleteProject} className="text-red-600">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete Project
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setIsEditDialogOpen(true)}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Rediger prosjekt
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDeleteProject} className="text-red-600">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Slett prosjekt
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div className="grid grid-cols-3 gap-8 mb-6">
+          <div>
+            <p className="text-sm text-gray-500">Antall show</p>
+            <p className="text-3xl font-semibold text-gray-900">{totalShows}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Billetter solgt</p>
+            <p className="text-3xl font-semibold text-gray-900">
+              {formatNumber(totalTicketsSold)}
+              {totalCapacity > 0 && (
+                <span className="text-lg text-gray-400"> / {formatNumber(totalCapacity)}</span>
+              )}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Omsetning</p>
+            <p className="text-3xl font-semibold text-blue-600">{formatCurrency(totalRevenue)}</p>
+          </div>
+        </div>
+
+        {/* Total capacity progress */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-gray-500">Total kapasitet</span>
+            <span className="text-sm text-gray-500">{fillRate}%</span>
+          </div>
+          <Progress value={fillRate} className="h-2 bg-gray-100" />
+        </div>
       </div>
 
-      {/* Stops Section */}
+      {/* Turnéstopp section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold">Stops</h2>
-            <p className="text-muted-foreground text-sm">Tour stops and venues for this project</p>
-          </div>
+          <h2 className="text-lg font-semibold text-gray-900">Turnéstopp</h2>
           <Dialog open={isStopDialogOpen} onOpenChange={setIsStopDialogOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="mr-2 h-4 w-4" />
-                Add Stop
+                Legg til stopp
               </Button>
             </DialogTrigger>
             <DialogContent>
               <form onSubmit={handleCreateStop}>
                 <DialogHeader>
-                  <DialogTitle>Add New Stop</DialogTitle>
+                  <DialogTitle>Legg til nytt stopp</DialogTitle>
                   <DialogDescription>
-                    Add a venue/city stop to {project.name}.
+                    Legg til et nytt spillested for {project.name}.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="stop_name">Stop Name</Label>
+                    <Label htmlFor="stop_name">Stoppnavn</Label>
                     <Input
                       id="stop_name"
-                      placeholder="e.g., Los Angeles Weekend"
+                      placeholder="f.eks. Bergen"
                       value={newStopName}
                       onChange={(e) => setNewStopName(e.target.value)}
                       required
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="venue">Venue</Label>
+                    <Label htmlFor="venue">Spillested</Label>
                     <Input
                       id="venue"
-                      placeholder="e.g., The Forum"
+                      placeholder="f.eks. Grieghallen"
                       value={newStopVenue}
                       onChange={(e) => setNewStopVenue(e.target.value)}
                       required
@@ -337,40 +385,40 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="city">City</Label>
+                      <Label htmlFor="city">By</Label>
                       <Input
                         id="city"
-                        placeholder="e.g., Los Angeles"
+                        placeholder="f.eks. Bergen"
                         value={newStopCity}
                         onChange={(e) => setNewStopCity(e.target.value)}
                         required
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="country">Country</Label>
+                      <Label htmlFor="country">Land</Label>
                       <Input
                         id="country"
-                        placeholder="e.g., USA"
+                        placeholder="f.eks. Norge"
                         value={newStopCountry}
                         onChange={(e) => setNewStopCountry(e.target.value)}
                       />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="capacity">Venue Capacity</Label>
+                    <Label htmlFor="capacity">Kapasitet</Label>
                     <Input
                       id="capacity"
                       type="number"
-                      placeholder="e.g., 17500"
+                      placeholder="f.eks. 1500"
                       value={newStopCapacity}
                       onChange={(e) => setNewStopCapacity(e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="notes">Notes</Label>
+                    <Label htmlFor="notes">Notater</Label>
                     <Textarea
                       id="notes"
-                      placeholder="Any additional notes..."
+                      placeholder="Eventuelle notater..."
                       value={newStopNotes}
                       onChange={(e) => setNewStopNotes(e.target.value)}
                       rows={3}
@@ -379,10 +427,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setIsStopDialogOpen(false)}>
-                    Cancel
+                    Avbryt
                   </Button>
                   <Button type="submit" disabled={creating || !newStopName.trim() || !newStopVenue.trim() || !newStopCity.trim()}>
-                    {creating ? "Adding..." : "Add Stop"}
+                    {creating ? "Legger til..." : "Legg til stopp"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -391,59 +439,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         </div>
 
         {stops.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <MapPin className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No stops yet</h3>
-              <p className="text-muted-foreground text-center mb-4">
-                Add your first stop (venue/city) to this project.
-              </p>
-              <Button onClick={() => setIsStopDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Stop
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="bg-white rounded-lg border border-dashed border-gray-300 p-12 text-center">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Ingen stopp ennå</h3>
+            <p className="text-gray-500 mb-4">
+              Legg til ditt første turnéstopp for å begynne.
+            </p>
+            <Button onClick={() => setIsStopDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Legg til stopp
+            </Button>
+          </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-3">
             {stops.map((stop) => (
-              <Link key={stop.id} href={`/dashboard/projects/${id}/stops/${stop.id}`}>
-                <Card className="hover:border-primary/50 transition-colors cursor-pointer h-full">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-lg">{stop.name}</CardTitle>
-                        <CardDescription className="flex items-center gap-1 mt-1">
-                          <Building className="h-3 w-3" />
-                          {stop.venue}
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-4 text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <MapPin className="h-4 w-4" />
-                          {stop.city}{stop.country && `, ${stop.country}`}
-                        </span>
-                        {stop.capacity && (
-                          <span className="flex items-center gap-1">
-                            <Users className="h-4 w-4" />
-                            {stop.capacity.toLocaleString()}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">
-                          {stop.shows_count} {stop.shows_count === 1 ? "show" : "shows"}
-                        </span>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
+              <StopAccordion key={stop.id} stop={stop} onDataChange={loadProjectData} />
             ))}
           </div>
         )}
@@ -454,14 +463,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         <DialogContent>
           <form onSubmit={handleUpdateProject}>
             <DialogHeader>
-              <DialogTitle>Edit Project</DialogTitle>
+              <DialogTitle>Rediger prosjekt</DialogTitle>
               <DialogDescription>
-                Update project details.
+                Oppdater prosjektdetaljene.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="edit_name">Project Name</Label>
+                <Label htmlFor="edit_name">Prosjektnavn</Label>
                 <Input
                   id="edit_name"
                   value={editProjectName}
@@ -469,51 +478,26 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit_status">Status</Label>
-                <Select value={editProjectStatus} onValueChange={setEditProjectStatus}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="archived">Archived</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit_start_date">Start Date</Label>
-                  <Input
-                    id="edit_start_date"
-                    type="date"
-                    value={editProjectStartDate}
-                    onChange={(e) => setEditProjectStartDate(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit_end_date">End Date</Label>
-                  <Input
-                    id="edit_end_date"
-                    type="date"
-                    value={editProjectEndDate}
-                    onChange={(e) => setEditProjectEndDate(e.target.value)}
-                  />
-                </div>
-              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-                Cancel
+                Avbryt
               </Button>
               <Button type="submit" disabled={updating || !editProjectName.trim()}>
-                {updating ? "Saving..." : "Save Changes"}
+                {updating ? "Lagrer..." : "Lagre endringer"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Share Dialog */}
+      <ShareDialog
+        projectId={id}
+        projectName={project.name}
+        open={isShareDialogOpen}
+        onOpenChange={setIsShareDialogOpen}
+      />
     </div>
   );
 }

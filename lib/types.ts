@@ -62,6 +62,8 @@ export interface Database {
           end_date: string | null;
           budget: number | null;
           currency: string;
+          share_slug: string | null;
+          share_enabled: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -74,6 +76,8 @@ export interface Database {
           end_date?: string | null;
           budget?: number | null;
           currency?: string;
+          share_slug?: string | null;
+          share_enabled?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -86,6 +90,8 @@ export interface Database {
           end_date?: string | null;
           budget?: number | null;
           currency?: string;
+          share_slug?: string | null;
+          share_enabled?: boolean;
           created_at?: string;
           updated_at?: string;
         };
