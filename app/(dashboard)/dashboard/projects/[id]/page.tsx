@@ -44,6 +44,7 @@ interface Show {
   capacity: number | null;
   status: "upcoming" | "completed" | "cancelled";
   notes: string | null;
+  sales_start_date: string | null;
   tickets_sold: number;
   revenue: number;
 }

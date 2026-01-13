@@ -29,6 +29,7 @@ import {
   FileText,
   Trash2,
   Pencil,
+  Calendar,
 } from "lucide-react";
 import { TicketsChart } from "@/components/project/tickets-chart";
 
@@ -47,6 +48,7 @@ interface Show {
   capacity: number | null;
   status: "upcoming" | "completed" | "cancelled";
   notes: string | null;
+  sales_start_date: string | null;
   tickets_sold: number;
   revenue: number;
 }
@@ -95,6 +97,10 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
   const [editRevenue, setEditRevenue] = useState("");
   const [editSource, setEditSource] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Edit show state
+  const [editingShow, setEditingShow] = useState<Show | null>(null);
+  const [editShowSalesStartDate, setEditShowSalesStartDate] = useState("");
 
   const totalTicketsSold = stop.shows.reduce((sum, s) => sum + s.tickets_sold, 0);
   const totalCapacity = stop.shows.reduce((sum, s) => sum + (s.capacity || 0), 0);
@@ -348,6 +354,30 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     setEditSource(ticket.source || "");
   }
 
+  function startEditShow(show: Show) {
+    setEditingShow(show);
+    setEditShowSalesStartDate(show.sales_start_date || "");
+  }
+
+  async function handleUpdateShow(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingShow) return;
+
+    setSaving(true);
+
+    const supabase = createClient();
+    await supabase
+      .from("shows")
+      .update({
+        sales_start_date: editShowSalesStartDate || null,
+      })
+      .eq("id", editingShow.id);
+
+    setEditingShow(null);
+    onDataChange();
+    setSaving(false);
+  }
+
   return (
     <div className="bg-white rounded-lg border border-gray-200">
       {/* Header - clickable */}
@@ -450,6 +480,11 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                           {show.time && (
                             <span className="text-gray-500">{formatTime(show.time)}</span>
                           )}
+                          {show.sales_start_date && (
+                            <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                              Salgsstart: {formatDate(show.sales_start_date)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="w-32">
@@ -471,6 +506,10 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => startEditShow(show)}>
+                            <Calendar className="mr-2 h-4 w-4" />
+                            Rediger show
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => openReportsDialog(show)}>
                             <FileText className="mr-2 h-4 w-4" />
                             Se rapporter
@@ -647,6 +686,42 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                 Avbryt
               </Button>
               <Button type="submit" disabled={saving || !editQuantity || !editRevenue}>
+                {saving ? "Lagrer..." : "Lagre endringer"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Show Dialog */}
+      <Dialog open={!!editingShow} onOpenChange={(open) => !open && setEditingShow(null)}>
+        <DialogContent>
+          <form onSubmit={handleUpdateShow}>
+            <DialogHeader>
+              <DialogTitle>Rediger show</DialogTitle>
+              <DialogDescription>
+                Oppdater showdetaljene. Salgsstartdato brukes for å fordele historiske salg.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit_sales_start_date">Salgsstartdato</Label>
+                <Input
+                  id="edit_sales_start_date"
+                  type="date"
+                  value={editShowSalesStartDate}
+                  onChange={(e) => setEditShowSalesStartDate(e.target.value)}
+                />
+                <p className="text-xs text-gray-500">
+                  Når billettene ble lagt ut for salg. Ved første rapport vil salget fordeles fra denne datoen.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditingShow(null)}>
+                Avbryt
+              </Button>
+              <Button type="submit" disabled={saving}>
                 {saving ? "Lagrer..." : "Lagre endringer"}
               </Button>
             </DialogFooter>
