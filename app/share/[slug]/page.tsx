@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 import { Progress } from "@/components/ui/progress";
+import { SharePageWrapper } from "@/components/share/share-page-wrapper";
 
 // Use service role for public access to shared projects
 const supabase = createClient(
@@ -30,7 +31,7 @@ async function getSharedProject(slug: string) {
   // Get project by share slug
   const { data: project, error } = await supabase
     .from("projects")
-    .select("*")
+    .select("*, share_password_hash")
     .eq("share_slug", slug)
     .eq("share_enabled", true)
     .single();
@@ -38,6 +39,8 @@ async function getSharedProject(slug: string) {
   if (error || !project) {
     return null;
   }
+
+  const hasPassword = !!project.share_password_hash;
 
   // Get stops with shows and tickets
   const { data: stops } = await supabase
@@ -47,7 +50,7 @@ async function getSharedProject(slug: string) {
     .order("created_at", { ascending: false });
 
   if (!stops) {
-    return { project, stops: [] };
+    return { project, stops: [], hasPassword };
   }
 
   const stopsWithShows: Stop[] = await Promise.all(
@@ -92,7 +95,7 @@ async function getSharedProject(slug: string) {
     })
   );
 
-  return { project, stops: stopsWithShows };
+  return { project, stops: stopsWithShows, hasPassword };
 }
 
 export default async function SharedProjectPage({
@@ -107,7 +110,7 @@ export default async function SharedProjectPage({
     notFound();
   }
 
-  const { project, stops } = data;
+  const { project, stops, hasPassword } = data;
 
   // Calculate totals
   const totalShows = stops.reduce((sum, stop) => sum + stop.shows.length, 0);
@@ -152,6 +155,11 @@ export default async function SharedProjectPage({
   };
 
   return (
+    <SharePageWrapper
+      slug={slug}
+      projectName={project.name}
+      hasPassword={hasPassword}
+    >
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
@@ -268,5 +276,6 @@ export default async function SharedProjectPage({
         </div>
       </div>
     </div>
+    </SharePageWrapper>
   );
 }

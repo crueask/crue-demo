@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Copy, Check, ExternalLink } from "lucide-react";
+import { Copy, Check, ExternalLink, Lock, Unlock } from "lucide-react";
 
 interface ShareDialogProps {
   projectId: string;
@@ -24,9 +24,13 @@ interface ShareDialogProps {
 export function ShareDialog({ projectId, projectName, open, onOpenChange }: ShareDialogProps) {
   const [shareSlug, setShareSlug] = useState<string | null>(null);
   const [shareEnabled, setShareEnabled] = useState(false);
+  const [hasPassword, setHasPassword] = useState(false);
   const [loading, setLoading] = useState(true);
   const [enabling, setEnabling] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [password, setPassword] = useState("");
+  const [showPasswordInput, setShowPasswordInput] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -40,13 +44,14 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
 
     const { data } = await supabase
       .from("projects")
-      .select("share_slug, share_enabled")
+      .select("share_slug, share_enabled, share_password_hash")
       .eq("id", projectId)
       .single();
 
     if (data) {
       setShareSlug(data.share_slug);
       setShareEnabled(data.share_enabled || false);
+      setHasPassword(!!data.share_password_hash);
     }
 
     setLoading(false);
@@ -94,6 +99,48 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
     }
 
     setEnabling(false);
+  }
+
+  async function handleSetPassword() {
+    if (!password.trim()) return;
+
+    setSavingPassword(true);
+    try {
+      const response = await fetch("/api/share/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, password }),
+      });
+
+      if (response.ok) {
+        setHasPassword(true);
+        setPassword("");
+        setShowPasswordInput(false);
+      }
+    } catch (error) {
+      console.error("Failed to set password:", error);
+    } finally {
+      setSavingPassword(false);
+    }
+  }
+
+  async function handleRemovePassword() {
+    setSavingPassword(true);
+    try {
+      const response = await fetch("/api/share/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, password: null }),
+      });
+
+      if (response.ok) {
+        setHasPassword(false);
+      }
+    } catch (error) {
+      console.error("Failed to remove password:", error);
+    } finally {
+      setSavingPassword(false);
+    }
   }
 
   function generateSlug() {
@@ -147,6 +194,58 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
                   </a>
                 </Button>
               </div>
+            </div>
+
+            {/* Password protection section */}
+            <div className="pt-4 border-t space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {hasPassword ? (
+                    <Lock className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Unlock className="h-4 w-4 text-gray-400" />
+                  )}
+                  <span className="text-sm font-medium">
+                    {hasPassword ? "Passordbeskyttet" : "Ingen passordbeskyttelse"}
+                  </span>
+                </div>
+                {hasPassword ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRemovePassword}
+                    disabled={savingPassword}
+                    className="text-red-600 hover:text-red-700"
+                  >
+                    {savingPassword ? "Fjerner..." : "Fjern passord"}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowPasswordInput(!showPasswordInput)}
+                  >
+                    Legg til passord
+                  </Button>
+                )}
+              </div>
+
+              {showPasswordInput && !hasPassword && (
+                <div className="flex gap-2">
+                  <Input
+                    type="password"
+                    placeholder="Skriv inn passord"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <Button
+                    onClick={handleSetPassword}
+                    disabled={savingPassword || !password.trim()}
+                  >
+                    {savingPassword ? "Lagrer..." : "Lagre"}
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div className="pt-4 border-t">
