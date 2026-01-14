@@ -262,6 +262,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           }
 
           // Handle multiple reports - distribute deltas between consecutive reports
+          // Only use salesStartDate for distribution if it exists
           let previousDate: string | null = salesStartDate;
           let previousTotal = 0;
 
@@ -277,12 +278,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               continue;
             }
 
-            // Determine start date for distribution
-            const startDate = previousDate && previousDate < ticketDate ? previousDate : ticketDate;
-            const totalDays = daysBetween(startDate, ticketDate) + 1;
+            // Only distribute if we have a valid previous date that's before the current date
+            // For the first report without salesStartDate, just show actual on report date
+            const canDistribute = previousDate && previousDate < ticketDate;
 
-            if (totalDays <= 1 || startDate === ticketDate) {
-              // Same day or no gap - all actual
+            if (!canDistribute) {
+              // No distribution - show actual on report date
               distributedData.push({
                 date: ticketDate,
                 stopId: stop.id,
@@ -290,18 +291,30 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 isEstimated: false,
               });
             } else {
-              // Distribute linearly across days
-              const ticketsPerDay = delta / totalDays;
+              // previousDate is guaranteed non-null here due to canDistribute check
+              const totalDays = daysBetween(previousDate!, ticketDate) + 1;
 
-              for (let j = 0; j < totalDays; j++) {
-                const date = addDays(startDate, j);
-                const isLastDay = j === totalDays - 1;
+              if (totalDays <= 1) {
                 distributedData.push({
-                  date,
+                  date: ticketDate,
                   stopId: stop.id,
-                  tickets: Math.round(ticketsPerDay),
-                  isEstimated: !isLastDay,
+                  tickets: delta,
+                  isEstimated: false,
                 });
+              } else {
+                // Distribute linearly across days
+                const ticketsPerDay = delta / totalDays;
+
+                for (let j = 0; j < totalDays; j++) {
+                  const date = addDays(previousDate!, j);
+                  const isLastDay = j === totalDays - 1;
+                  distributedData.push({
+                    date,
+                    stopId: stop.id,
+                    tickets: Math.round(ticketsPerDay),
+                    isEstimated: !isLastDay,
+                  });
+                }
               }
             }
 

@@ -205,6 +205,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
       }
 
       // Handle multiple reports
+      // Only use salesStartDate for distribution if it exists
       let previousDate: string | null = salesStartDate;
       let previousTotal = 0;
 
@@ -220,10 +221,12 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
           continue;
         }
 
-        const startDate = previousDate && previousDate < ticketDate ? previousDate : ticketDate;
-        const totalDays = daysBetween(startDate, ticketDate) + 1;
+        // Only distribute if we have a valid previous date that's before the current date
+        // For the first report without salesStartDate, just show actual on report date
+        const canDistribute = previousDate && previousDate < ticketDate;
 
-        if (totalDays <= 1 || startDate === ticketDate) {
+        if (!canDistribute) {
+          // No distribution - show actual on report date
           distributedData.push({
             date: ticketDate,
             showId: show.id,
@@ -231,17 +234,28 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
             isEstimated: false,
           });
         } else {
-          const ticketsPerDay = delta / totalDays;
+          const totalDays = daysBetween(previousDate, ticketDate) + 1;
 
-          for (let j = 0; j < totalDays; j++) {
-            const date = addDays(startDate, j);
-            const isLastDay = j === totalDays - 1;
+          if (totalDays <= 1) {
             distributedData.push({
-              date,
+              date: ticketDate,
               showId: show.id,
-              tickets: Math.round(ticketsPerDay),
-              isEstimated: !isLastDay,
+              tickets: delta,
+              isEstimated: false,
             });
+          } else {
+            const ticketsPerDay = delta / totalDays;
+
+            for (let j = 0; j < totalDays; j++) {
+              const date = addDays(previousDate, j);
+              const isLastDay = j === totalDays - 1;
+              distributedData.push({
+                date,
+                showId: show.id,
+                tickets: Math.round(ticketsPerDay),
+                isEstimated: !isLastDay,
+              });
+            }
           }
         }
 
@@ -348,26 +362,36 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
             continue;
           }
 
-          const startDate = previousDate && previousDate < ticketDate ? previousDate : ticketDate;
-          const totalDays = daysBetween(startDate, ticketDate) + 1;
+          // Only distribute if we have a valid previous date that's before the current date
+          const canDistribute = previousDate && previousDate < ticketDate;
 
-          if (totalDays <= 1 || startDate === ticketDate) {
+          if (!canDistribute) {
             distributedData.push({
               date: ticketDate,
               tickets: delta,
               isEstimated: false,
             });
           } else {
-            const ticketsPerDay = delta / totalDays;
+            const totalDays = daysBetween(previousDate, ticketDate) + 1;
 
-            for (let j = 0; j < totalDays; j++) {
-              const date = addDays(startDate, j);
-              const isLastDay = j === totalDays - 1;
+            if (totalDays <= 1) {
               distributedData.push({
-                date,
-                tickets: Math.round(ticketsPerDay),
-                isEstimated: !isLastDay,
+                date: ticketDate,
+                tickets: delta,
+                isEstimated: false,
               });
+            } else {
+              const ticketsPerDay = delta / totalDays;
+
+              for (let j = 0; j < totalDays; j++) {
+                const date = addDays(previousDate, j);
+                const isLastDay = j === totalDays - 1;
+                distributedData.push({
+                  date,
+                  tickets: Math.round(ticketsPerDay),
+                  isEstimated: !isLastDay,
+                });
+              }
             }
           }
 
