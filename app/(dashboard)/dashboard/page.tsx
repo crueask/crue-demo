@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { TicketsByTourChart } from "@/components/dashboard/tickets-by-tour-chart";
+import { DashboardChartSection } from "@/components/dashboard/dashboard-chart-section";
 import { ProjectGrid } from "@/components/dashboard/project-grid";
 
 interface ProjectWithStats {
@@ -385,7 +385,6 @@ export default async function DashboardPage() {
   };
 
   const projects = data?.projects || [];
-  const chartData = data?.chartData || [];
 
   // Prepare projects for chart (just id and name)
   const chartProjects = projects.map(p => ({ id: p.id, name: p.name }));
@@ -442,7 +441,7 @@ export default async function DashboardPage() {
 
       {/* Tickets by Tour Chart */}
       {chartProjects.length > 0 && (
-        <TicketsByTourChart data={chartData} projects={chartProjects} />
+        <DashboardChartSection initialProjects={chartProjects} />
       )}
 
       {/* Search and Projects Grid */}

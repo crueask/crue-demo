@@ -25,7 +25,7 @@ import {
 import { ArrowLeft, MoreHorizontal, Pencil, Trash2, Share } from "lucide-react";
 import { StopAccordion } from "@/components/project/stop-accordion";
 import { ShareDialog } from "@/components/project/share-dialog";
-import { TicketsChart } from "@/components/project/tickets-chart";
+import { ProjectChartSection } from "@/components/project/project-chart-section";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 interface Project {
@@ -63,17 +63,11 @@ interface Stop {
   shows: Show[];
 }
 
-interface ChartDataPoint {
-  date: string;
-  [stopId: string]: string | number;
-}
-
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
-  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Edit project dialog
@@ -191,200 +185,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
 
       setStops(sortedStops);
-
-      // Helper functions for date calculations
-      const daysBetween = (start: string, end: string): number => {
-        const startDate = new Date(start);
-        const endDate = new Date(end);
-        return Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-      };
-
-      const addDays = (dateStr: string, days: number): string => {
-        const date = new Date(dateStr);
-        date.setDate(date.getDate() + days);
-        return date.toISOString().split('T')[0];
-      };
-
-      // Build show info map with sales_start_date
-      const showInfoMap: Record<string, { sales_start_date: string | null; stopId: string }> = {};
-      for (const stop of stopsWithShows) {
-        for (const show of stop.shows) {
-          showInfoMap[show.id] = { sales_start_date: show.sales_start_date || null, stopId: stop.id };
-        }
-      }
-
-      // Calculate distributed ticket data for chart with estimations
-      interface DistributedTicket {
-        date: string;
-        stopId: string;
-        tickets: number;
-        isEstimated: boolean;
-      }
-
-      const distributedData: DistributedTicket[] = [];
-
-      for (const stop of stopsWithShows) {
-        for (const show of stop.shows) {
-          const { data: ticketSnapshots } = await supabase
-            .from("tickets")
-            .select("quantity_sold, sale_date, reported_at")
-            .eq("show_id", show.id)
-            .order("sale_date", { ascending: true, nullsFirst: false })
-            .order("reported_at", { ascending: true });
-
-          if (!ticketSnapshots || ticketSnapshots.length === 0) continue;
-
-          const salesStartDate = showInfoMap[show.id]?.sales_start_date;
-
-          // Helper to get the effective sales date from a ticket
-          // Reports received on a given day represent sales from the previous day
-          const getEffectiveSalesDate = (ticket: { sale_date: string | null; reported_at: string | null }): string | null => {
-            if (ticket.sale_date) return ticket.sale_date;
-            if (ticket.reported_at) {
-              // Subtract one day from reported_at to get actual sales date
-              return addDays(ticket.reported_at.split('T')[0], -1);
-            }
-            return null;
-          };
-
-          // Handle single report case
-          if (ticketSnapshots.length === 1) {
-            const ticket = ticketSnapshots[0];
-            const ticketDate = getEffectiveSalesDate(ticket);
-            if (!ticketDate) continue;
-
-            // If sales_start_date exists and is before the report date, distribute
-            if (salesStartDate && salesStartDate < ticketDate) {
-              const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
-              const ticketsPerDay = ticket.quantity_sold / totalDays;
-
-              for (let i = 0; i < totalDays; i++) {
-                const date = addDays(salesStartDate, i);
-                const isLastDay = i === totalDays - 1;
-                distributedData.push({
-                  date,
-                  stopId: stop.id,
-                  tickets: Math.round(ticketsPerDay),
-                  isEstimated: !isLastDay,
-                });
-              }
-            }
-            continue;
-          }
-
-          // Handle multiple reports - distribute deltas between consecutive reports
-          // Only use salesStartDate for distribution if it exists
-          let previousDate: string | null = salesStartDate;
-          let previousTotal = 0;
-          let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
-
-          for (let i = 0; i < ticketSnapshots.length; i++) {
-            const ticket = ticketSnapshots[i];
-            const ticketDate = getEffectiveSalesDate(ticket);
-            if (!ticketDate) continue;
-
-            const delta = ticket.quantity_sold - previousTotal;
-
-            // For the first report without salesStartDate, we can't show anything
-            // (we don't know when sales started, so no baseline to compare against)
-            // But we establish the baseline for subsequent reports
-            if (!hasBaseline) {
-              previousTotal = ticket.quantity_sold;
-              previousDate = ticketDate;
-              hasBaseline = true;
-              continue;
-            }
-
-            // Skip if delta is 0 or negative (no new tickets sold)
-            if (delta <= 0) {
-              previousTotal = ticket.quantity_sold;
-              previousDate = ticketDate;
-              continue;
-            }
-
-            // Only distribute if we have a valid previous date that's before the current date
-            const canDistribute = previousDate && previousDate < ticketDate;
-
-            if (!canDistribute) {
-              // No distribution - show actual on report date
-              distributedData.push({
-                date: ticketDate,
-                stopId: stop.id,
-                tickets: delta,
-                isEstimated: false,
-              });
-            } else {
-              // previousDate is guaranteed non-null here due to canDistribute check
-              const totalDays = daysBetween(previousDate!, ticketDate) + 1;
-
-              if (totalDays <= 1) {
-                distributedData.push({
-                  date: ticketDate,
-                  stopId: stop.id,
-                  tickets: delta,
-                  isEstimated: false,
-                });
-              } else {
-                // Distribute linearly across days
-                const ticketsPerDay = delta / totalDays;
-
-                for (let j = 0; j < totalDays; j++) {
-                  const date = addDays(previousDate!, j);
-                  const isLastDay = j === totalDays - 1;
-                  distributedData.push({
-                    date,
-                    stopId: stop.id,
-                    tickets: Math.round(ticketsPerDay),
-                    isEstimated: !isLastDay,
-                  });
-                }
-              }
-            }
-
-            previousTotal = ticket.quantity_sold;
-            previousDate = ticketDate;
-          }
-        }
-      }
-
-      // Aggregate distributed data by date and stop, separating actual vs estimated
-      const ticketsByDateAndStop: Record<string, Record<string, { actual: number; estimated: number }>> = {};
-
-      // Initialize all 14 days
-      for (let i = 0; i < 14; i++) {
-        const date = new Date();
-        date.setDate(date.getDate() - 1 - (13 - i));
-        const dateStr = date.toISOString().split('T')[0];
-        ticketsByDateAndStop[dateStr] = {};
-        for (const stop of stopsWithShows) {
-          ticketsByDateAndStop[dateStr][stop.id] = { actual: 0, estimated: 0 };
-        }
-      }
-
-      // Fill in distributed data
-      for (const item of distributedData) {
-        if (ticketsByDateAndStop[item.date] && ticketsByDateAndStop[item.date][item.stopId]) {
-          if (item.isEstimated) {
-            ticketsByDateAndStop[item.date][item.stopId].estimated += item.tickets;
-          } else {
-            ticketsByDateAndStop[item.date][item.stopId].actual += item.tickets;
-          }
-        }
-      }
-
-      // Convert to chart format with separate actual and estimated values
-      const formattedChartData = Object.entries(ticketsByDateAndStop)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, stops]) => {
-          const dataPoint: { date: string; [key: string]: string | number } = { date };
-          for (const [stopId, values] of Object.entries(stops)) {
-            dataPoint[stopId] = values.actual;
-            dataPoint[`${stopId}_estimated`] = values.estimated;
-          }
-          return dataPoint;
-        });
-
-      setChartData(formattedChartData);
     }
 
     setLoading(false);
@@ -539,11 +339,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Ticket sales chart by stop */}
       {stops.length > 0 && (
-        <TicketsChart
-          data={chartData}
-          entities={stops.map((s) => ({ id: s.id, name: s.name }))}
-          title="Billettutvikling per turnéstopp (siste 14 dager)"
-          height={280}
+        <ProjectChartSection
+          stops={stops.map((s) => ({
+            id: s.id,
+            name: s.name,
+            shows: s.shows.map((show) => ({
+              id: show.id,
+              name: show.name,
+              date: show.date,
+              sales_start_date: show.sales_start_date,
+            })),
+          }))}
         />
       )}
 

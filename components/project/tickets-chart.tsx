@@ -18,6 +18,9 @@ interface TicketsChartProps {
   }>;
   title?: string;
   height?: number;
+  showEstimations?: boolean;
+  isCumulative?: boolean;
+  isRevenue?: boolean;
 }
 
 // Color palette for entities - using distinct colors
@@ -42,7 +45,15 @@ function hasEstimatedData(data: Array<{ [key: string]: string | number }>, entit
   );
 }
 
-export function TicketsChart({ data, entities, title, height = 200 }: TicketsChartProps) {
+export function TicketsChart({
+  data,
+  entities,
+  title,
+  height = 200,
+  showEstimations = true,
+  isCumulative = false,
+  isRevenue = false,
+}: TicketsChartProps) {
   // Build chart config dynamically based on entities
   const chartConfig = entities.reduce((acc, entity, index) => {
     acc[entity.id] = {
@@ -64,13 +75,34 @@ export function TicketsChart({ data, entities, title, height = 200 }: TicketsCha
     return new Intl.NumberFormat("nb-NO").format(value);
   };
 
+  const formatCurrency = (value: number) => {
+    if (value >= 1000000) {
+      return `${(value / 1000000).toFixed(1)}M`;
+    }
+    if (value >= 1000) {
+      return `${(value / 1000).toFixed(0)}k`;
+    }
+    return new Intl.NumberFormat("nb-NO").format(value);
+  };
+
+  const formatTooltipValue = (value: number) => {
+    if (isRevenue) {
+      return new Intl.NumberFormat("nb-NO", {
+        style: "decimal",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(value) + " kr";
+    }
+    return formatNumber(value);
+  };
+
   // Don't render if no data or no entities
   if (!data.length || !entities.length) {
     return null;
   }
 
   // Check if we have any estimated data to show
-  const showEstimatedLegend = hasEstimatedData(data, entities);
+  const showEstimatedLegend = showEstimations && hasEstimatedData(data, entities);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4">
@@ -125,8 +157,8 @@ export function TicketsChart({ data, entities, title, height = 200 }: TicketsCha
             axisLine={false}
             tickMargin={8}
             tick={{ fontSize: 10, fill: "#6B7280" }}
-            tickFormatter={formatNumber}
-            width={40}
+            tickFormatter={isRevenue ? formatCurrency : formatNumber}
+            width={isRevenue ? 50 : 40}
           />
           <ReferenceLine y={0} stroke="#E5E7EB" />
           <ChartTooltip
@@ -185,12 +217,12 @@ export function TicketsChart({ data, entities, title, height = 200 }: TicketsCha
                               <span className="text-sm text-gray-600">{data.name}</span>
                             </div>
                             <span className="text-sm font-semibold" style={{ color: data.color }}>
-                              {formatNumber(data.total)}
+                              {formatTooltipValue(data.total)}
                             </span>
                           </div>
-                          {data.estimated > 0 && (
+                          {data.estimated > 0 && showEstimations && (
                             <div className="flex justify-end text-xs text-gray-400 italic">
-                              ({formatNumber(data.estimated)} estimert)
+                              ({formatTooltipValue(data.estimated)} estimert)
                             </div>
                           )}
                         </div>
@@ -202,7 +234,7 @@ export function TicketsChart({ data, entities, title, height = 200 }: TicketsCha
             }}
           />
           {/* Estimated bars (striped pattern) - render first to be at bottom of stack */}
-          {entities.map((entity) => (
+          {showEstimations && entities.map((entity) => (
             <Bar
               key={`${entity.id}_estimated`}
               dataKey={`${entity.id}_estimated`}

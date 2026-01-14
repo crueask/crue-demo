@@ -5,7 +5,7 @@ import {
   ChartContainer,
   ChartTooltip,
 } from "@/components/ui/chart";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ReferenceLine } from "recharts";
+import { Bar, BarChart, Area, AreaChart, CartesianGrid, XAxis, YAxis, ReferenceLine } from "recharts";
 
 interface TicketsByTourChartProps {
   data: Array<{
@@ -16,6 +16,10 @@ interface TicketsByTourChartProps {
     id: string;
     name: string;
   }>;
+  showEstimations?: boolean;
+  isCumulative?: boolean;
+  isRevenue?: boolean;
+  hideHeader?: boolean;
 }
 
 // Color palette for projects - using distinct colors
@@ -40,7 +44,14 @@ function hasEstimatedData(data: Array<{ [key: string]: string | number }>, proje
   );
 }
 
-export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) {
+export function TicketsByTourChart({
+  data,
+  projects,
+  showEstimations = true,
+  isCumulative = false,
+  isRevenue = false,
+  hideHeader = false,
+}: TicketsByTourChartProps) {
   // Build chart config dynamically based on projects
   const chartConfig = projects.reduce((acc, project, index) => {
     acc[project.id] = {
@@ -62,24 +73,47 @@ export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) 
     return new Intl.NumberFormat("nb-NO").format(value);
   };
 
+  const formatCurrency = (value: number) => {
+    if (value >= 1000000) {
+      return `${(value / 1000000).toFixed(1)}M`;
+    }
+    if (value >= 1000) {
+      return `${(value / 1000).toFixed(0)}k`;
+    }
+    return new Intl.NumberFormat("nb-NO").format(value);
+  };
+
+  const formatTooltipValue = (value: number) => {
+    if (isRevenue) {
+      return new Intl.NumberFormat("nb-NO", {
+        style: "decimal",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(value) + " kr";
+    }
+    return formatNumber(value);
+  };
+
   // Calculate total per day for the label above bars (actual + estimated)
   const dataWithTotals = data.map(day => {
     const total = projects.reduce((sum, project) => {
       const actual = Number(day[project.id]) || 0;
-      const estimated = Number(day[`${project.id}_estimated`]) || 0;
+      const estimated = showEstimations ? (Number(day[`${project.id}_estimated`]) || 0) : 0;
       return sum + actual + estimated;
     }, 0);
     return { ...day, total };
   });
 
   // Check if we have any estimated data to show
-  const showEstimatedLegend = hasEstimatedData(data, projects);
+  const showEstimatedLegend = showEstimations && hasEstimatedData(data, projects);
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <h3 className="text-sm font-medium text-gray-500 mb-4">
-        Billetter solgt per turne (siste 14 dager)
-      </h3>
+    <div className={hideHeader ? "" : "bg-white rounded-lg border border-gray-200 p-6"}>
+      {!hideHeader && (
+        <h3 className="text-sm font-medium text-gray-500 mb-4">
+          {isRevenue ? 'Inntekt' : 'Billetter solgt'} per turne{isCumulative ? ' (kumulativ)' : ' (siste 14 dager)'}
+        </h3>
+      )}
       <ChartContainer config={chartConfig} className="h-[280px] w-full">
         <BarChart
           data={dataWithTotals}
@@ -126,7 +160,7 @@ export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) 
             axisLine={false}
             tickMargin={8}
             tick={{ fontSize: 11, fill: "#6B7280" }}
-            tickFormatter={formatNumber}
+            tickFormatter={isRevenue ? formatCurrency : formatNumber}
           />
           <ReferenceLine y={0} stroke="#E5E7EB" />
           <ChartTooltip
@@ -185,12 +219,12 @@ export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) 
                               <span className="text-sm text-gray-600">{data.name}</span>
                             </div>
                             <span className="text-sm font-semibold" style={{ color: data.color }}>
-                              {formatNumber(data.total)}
+                              {formatTooltipValue(data.total)}
                             </span>
                           </div>
-                          {data.estimated > 0 && (
+                          {data.estimated > 0 && showEstimations && (
                             <div className="flex justify-end text-xs text-gray-400 italic">
-                              ({formatNumber(data.estimated)} estimert)
+                              ({formatTooltipValue(data.estimated)} estimert)
                             </div>
                           )}
                         </div>
@@ -202,7 +236,7 @@ export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) 
             }}
           />
           {/* Estimated bars (striped pattern) - render first to be at bottom of stack */}
-          {projects.map((project) => (
+          {showEstimations && projects.map((project) => (
             <Bar
               key={`${project.id}_estimated`}
               dataKey={`${project.id}_estimated`}
