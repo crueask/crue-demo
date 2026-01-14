@@ -4,7 +4,8 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Search, Eye, EyeOff } from "lucide-react";
 
 interface ProjectWithStats {
   id: string;
@@ -14,6 +15,7 @@ interface ProjectWithStats {
   ticketsSold: number;
   capacity: number;
   revenue: number;
+  hasUpcomingShows: boolean;
 }
 
 interface ProjectGridProps {
@@ -22,15 +24,38 @@ interface ProjectGridProps {
 
 export function ProjectGrid({ projects }: ProjectGridProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [showPastProjects, setShowPastProjects] = useState(false);
+
+  // Count projects with and without upcoming shows
+  const projectsWithUpcoming = projects.filter(p => p.hasUpcomingShows);
+  const projectsWithoutUpcoming = projects.filter(p => !p.hasUpcomingShows);
 
   const filteredProjects = useMemo(() => {
-    if (!searchTerm.trim()) return projects;
-
+    const isSearching = searchTerm.trim().length > 0;
     const search = searchTerm.toLowerCase();
-    return projects.filter((project) =>
-      project.name.toLowerCase().includes(search)
-    );
-  }, [projects, searchTerm]);
+
+    if (isSearching) {
+      // When searching, show all matching projects but sort with upcoming shows first
+      const matching = projects.filter((project) =>
+        project.name.toLowerCase().includes(search)
+      );
+      return matching.sort((a, b) => {
+        // Projects with upcoming shows come first
+        if (a.hasUpcomingShows && !b.hasUpcomingShows) return -1;
+        if (!a.hasUpcomingShows && b.hasUpcomingShows) return 1;
+        // Then sort alphabetically
+        return a.name.localeCompare(b.name, 'nb-NO', { sensitivity: 'base' });
+      });
+    }
+
+    // Not searching - apply the toggle filter
+    if (showPastProjects) {
+      return projects;
+    }
+
+    // Only show projects with upcoming shows
+    return projectsWithUpcoming;
+  }, [projects, searchTerm, showPastProjects, projectsWithUpcoming]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("nb-NO", {
@@ -57,9 +82,31 @@ export function ProjectGrid({ projects }: ProjectGridProps) {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <p className="text-sm text-gray-500">
-          Viser {filteredProjects.length} av {projects.length} turnéer
-        </p>
+        <div className="flex items-center gap-4">
+          {projectsWithoutUpcoming.length > 0 && !searchTerm.trim() && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowPastProjects(!showPastProjects)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              {showPastProjects ? (
+                <>
+                  <EyeOff className="h-4 w-4 mr-2" />
+                  Skjul avsluttede ({projectsWithoutUpcoming.length})
+                </>
+              ) : (
+                <>
+                  <Eye className="h-4 w-4 mr-2" />
+                  Vis avsluttede ({projectsWithoutUpcoming.length})
+                </>
+              )}
+            </Button>
+          )}
+          <p className="text-sm text-gray-500">
+            Viser {filteredProjects.length} av {projects.length} turnéer
+          </p>
+        </div>
       </div>
 
       {/* Projects Grid */}

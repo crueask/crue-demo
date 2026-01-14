@@ -11,6 +11,7 @@ interface ProjectWithStats {
   ticketsSold: number;
   capacity: number;
   revenue: number;
+  hasUpcomingShows: boolean;
 }
 
 async function getDashboardData() {
@@ -61,12 +62,12 @@ async function getDashboardData() {
     allStopIds.push(stop.id);
   }
 
-  // Fetch all shows for all stops in one query (including sales_start_date for distribution)
+  // Fetch all shows for all stops in one query (including sales_start_date for distribution and date for upcoming check)
   const { data: allShows } = allStopIds.length > 0
-    ? await adminClient.from("shows").select("id, stop_id, capacity, sales_start_date").in("stop_id", allStopIds)
+    ? await adminClient.from("shows").select("id, stop_id, capacity, sales_start_date, date").in("stop_id", allStopIds)
     : { data: [] };
 
-  const showsByStop: Record<string, Array<{ id: string; stop_id: string; capacity: number; sales_start_date: string | null }>> = {};
+  const showsByStop: Record<string, Array<{ id: string; stop_id: string; capacity: number; sales_start_date: string | null; date: string }>> = {};
   const allShowIds: string[] = [];
   const showInfoMap: Record<string, { sales_start_date: string | null }> = {};
   for (const show of allShows || []) {
@@ -77,6 +78,9 @@ async function getDashboardData() {
     allShowIds.push(show.id);
     showInfoMap[show.id] = { sales_start_date: show.sales_start_date };
   }
+
+  // Today's date for determining upcoming shows
+  const today = new Date().toISOString().split('T')[0];
 
   // Fetch all tickets for all shows in one query
   const { data: allTickets } = allShowIds.length > 0
@@ -124,6 +128,7 @@ async function getDashboardData() {
     let showCapacity = 0;
     let ticketsSold = 0;
     let revenue = 0;
+    let hasUpcomingShows = false;
 
     for (const stop of stops) {
       const shows = showsByStop[stop.id] || [];
@@ -131,6 +136,11 @@ async function getDashboardData() {
       showCapacity += shows.reduce((sum, s) => sum + (s.capacity || 0), 0);
 
       for (const show of shows) {
+        // Check if this show is upcoming
+        if (show.date >= today) {
+          hasUpcomingShows = true;
+        }
+
         // Get the latest ticket (first one since sorted desc)
         const tickets = ticketsByShow[show.id];
         if (tickets && tickets.length > 0) {
@@ -148,6 +158,7 @@ async function getDashboardData() {
       ticketsSold,
       capacity: showCapacity || totalCapacity,
       revenue,
+      hasUpcomingShows,
     };
   });
 
