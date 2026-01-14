@@ -276,6 +276,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           // Only use salesStartDate for distribution if it exists
           let previousDate: string | null = salesStartDate;
           let previousTotal = 0;
+          let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
 
           for (let i = 0; i < ticketSnapshots.length; i++) {
             const ticket = ticketSnapshots[i];
@@ -283,6 +284,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             if (!ticketDate) continue;
 
             const delta = ticket.quantity_sold - previousTotal;
+
+            // For the first report without salesStartDate, we can't show anything
+            // (we don't know when sales started, so no baseline to compare against)
+            // But we establish the baseline for subsequent reports
+            if (!hasBaseline) {
+              previousTotal = ticket.quantity_sold;
+              previousDate = ticketDate;
+              hasBaseline = true;
+              continue;
+            }
+
+            // Skip if delta is 0 or negative (no new tickets sold)
             if (delta <= 0) {
               previousTotal = ticket.quantity_sold;
               previousDate = ticketDate;
@@ -290,7 +303,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             }
 
             // Only distribute if we have a valid previous date that's before the current date
-            // For the first report without salesStartDate, just show actual on report date
             const canDistribute = previousDate && previousDate < ticketDate;
 
             if (!canDistribute) {

@@ -235,6 +235,7 @@ async function getDashboardData() {
     // Only use salesStartDate for distribution if it exists
     let previousDate: string | null = salesStartDate;
     let previousTotal = 0;
+    let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
 
     for (let i = 0; i < sortedTickets.length; i++) {
       const ticket = sortedTickets[i];
@@ -243,7 +244,18 @@ async function getDashboardData() {
 
       const delta = ticket.quantity_sold - previousTotal;
 
+      // For the first report without salesStartDate, we can't show anything
+      // (we don't know when sales started, so no baseline to compare against)
+      // But we establish the baseline for subsequent reports
+      if (!hasBaseline) {
+        previousTotal = ticket.quantity_sold;
+        previousDate = ticketDate;
+        hasBaseline = true; // Now we have a baseline for future reports
+        continue;
+      }
+
       // Skip if delta is 0 or negative (no new tickets sold)
+      // But still update tracking variables
       if (delta <= 0) {
         previousTotal = ticket.quantity_sold;
         previousDate = ticketDate;
@@ -251,7 +263,6 @@ async function getDashboardData() {
       }
 
       // Only distribute if we have a valid previous date that's before the current date
-      // For the first report without salesStartDate, just show actual on report date
       const canDistribute = previousDate && previousDate < ticketDate;
 
       if (!canDistribute) {

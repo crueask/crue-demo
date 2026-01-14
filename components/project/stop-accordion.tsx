@@ -219,6 +219,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
       // Only use salesStartDate for distribution if it exists
       let previousDate: string | null = salesStartDate;
       let previousTotal = 0;
+      let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
 
       for (let i = 0; i < ticketSnapshots.length; i++) {
         const ticket = ticketSnapshots[i];
@@ -226,6 +227,18 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
         if (!ticketDate) continue;
 
         const delta = ticket.quantity_sold - previousTotal;
+
+        // For the first report without salesStartDate, we can't show anything
+        // (we don't know when sales started, so no baseline to compare against)
+        // But we establish the baseline for subsequent reports
+        if (!hasBaseline) {
+          previousTotal = ticket.quantity_sold;
+          previousDate = ticketDate;
+          hasBaseline = true;
+          continue;
+        }
+
+        // Skip if delta is 0 or negative (no new tickets sold)
         if (delta <= 0) {
           previousTotal = ticket.quantity_sold;
           previousDate = ticketDate;
@@ -233,7 +246,6 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
         }
 
         // Only distribute if we have a valid previous date that's before the current date
-        // For the first report without salesStartDate, just show actual on report date
         const canDistribute = previousDate && previousDate < ticketDate;
 
         if (!canDistribute) {
@@ -370,8 +382,11 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
           }
         }
       } else {
+        // Handle multiple reports - distribute deltas between consecutive reports
+        // Only use salesStartDate for distribution if it exists
         let previousDate: string | null = salesStartDate;
         let previousTotal = 0;
+        let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
 
         for (let i = 0; i < ticketSnapshots.length; i++) {
           const ticket = ticketSnapshots[i];
@@ -379,6 +394,19 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
           if (!ticketDate) continue;
 
           const delta = ticket.quantity_sold - previousTotal;
+
+          // For the first report without salesStartDate, we can't show anything
+          // (we don't know when sales started, so no baseline to compare against)
+          // But we establish the baseline for subsequent reports
+          if (!hasBaseline) {
+            previousTotal = ticket.quantity_sold;
+            previousDate = ticketDate;
+            hasBaseline = true; // Now we have a baseline for future reports
+            continue;
+          }
+
+          // Skip if delta is 0 or negative (no new tickets sold)
+          // But still update tracking variables
           if (delta <= 0) {
             previousTotal = ticket.quantity_sold;
             previousDate = ticketDate;
@@ -389,6 +417,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
           const canDistribute = previousDate && previousDate < ticketDate;
 
           if (!canDistribute) {
+            // No distribution - show actual on effective sales date
             distributedData.push({
               date: ticketDate,
               tickets: delta,
