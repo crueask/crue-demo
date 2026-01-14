@@ -162,6 +162,7 @@ export function TicketsChart({
           />
           <ReferenceLine y={0} stroke="#E5E7EB" />
           <ChartTooltip
+            wrapperStyle={{ zIndex: 9999 }}
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
 
