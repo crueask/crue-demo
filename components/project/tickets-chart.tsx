@@ -160,18 +160,22 @@ export function TicketsChart({ data, entities, title, height = 200 }: TicketsCha
                 }
               }
 
+              // Sort by total tickets (descending)
+              const sortedEntityData = Object.entries(entityData)
+                .map(([id, data]) => ({ id, ...data, total: data.actual + data.estimated }))
+                .sort((a, b) => b.total - a.total);
+
               return (
                 <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 min-w-[180px]">
                   <p className="text-sm font-medium text-gray-900 mb-2 border-b border-gray-100 pb-2">
                     {formatDate(label)}
                   </p>
                   <div className="space-y-1.5">
-                    {Object.entries(entityData).map(([entityId, data]) => {
-                      const total = data.actual + data.estimated;
-                      if (total === 0) return null;
+                    {sortedEntityData.map((data) => {
+                      if (data.total === 0) return null;
 
                       return (
-                        <div key={entityId} className="space-y-0.5">
+                        <div key={data.id} className="space-y-0.5">
                           <div className="flex items-center justify-between gap-4">
                             <div className="flex items-center gap-2">
                               <div
@@ -181,7 +185,7 @@ export function TicketsChart({ data, entities, title, height = 200 }: TicketsCha
                               <span className="text-sm text-gray-600">{data.name}</span>
                             </div>
                             <span className="text-sm font-semibold" style={{ color: data.color }}>
-                              {formatNumber(total)}
+                              {formatNumber(data.total)}
                             </span>
                           </div>
                           {data.estimated > 0 && (
