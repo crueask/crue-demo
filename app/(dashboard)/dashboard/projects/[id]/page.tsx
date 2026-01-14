@@ -40,11 +40,13 @@ interface Project {
 
 interface Show {
   id: string;
+  name: string | null;
   date: string;
   time: string | null;
   capacity: number | null;
   status: "upcoming" | "completed" | "cancelled";
   notes: string | null;
+  sales_start_date: string | null;
   tickets_sold: number;
   revenue: number;
 }
@@ -150,23 +152,77 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         })
       );
 
-      setStops(stopsWithShows);
+      // Sort stops by first upcoming show date
+      const today = new Date().toISOString().split("T")[0];
+      const sortedStops = [...stopsWithShows].sort((a, b) => {
+        // Find the first upcoming show for each stop
+        const aUpcoming = a.shows
+          .filter((s: Show) => s.date >= today)
+          .sort((s1: Show, s2: Show) => s1.date.localeCompare(s2.date) || (s1.time || "").localeCompare(s2.time || ""))[0];
+        const bUpcoming = b.shows
+          .filter((s: Show) => s.date >= today)
+          .sort((s1: Show, s2: Show) => s1.date.localeCompare(s2.date) || (s1.time || "").localeCompare(s2.time || ""))[0];
 
-      // Load chart data - daily deltas grouped by stop
-      const chartDataByDate: Record<string, Record<string, number>> = {};
+        // If both have upcoming shows, sort by first upcoming date
+        if (aUpcoming && bUpcoming) {
+          const dateCompare = aUpcoming.date.localeCompare(bUpcoming.date);
+          if (dateCompare !== 0) return dateCompare;
+          return (aUpcoming.time || "").localeCompare(bUpcoming.time || "");
+        }
+        // Stops with upcoming shows come first
+        if (aUpcoming && !bUpcoming) return -1;
+        if (!aUpcoming && bUpcoming) return 1;
+        // Both have no upcoming shows - sort by most recent past show
+        const aLast = [...a.shows].sort((s1: Show, s2: Show) => s2.date.localeCompare(s1.date))[0];
+        const bLast = [...b.shows].sort((s1: Show, s2: Show) => s2.date.localeCompare(s1.date))[0];
+        if (aLast && bLast) {
+          return bLast.date.localeCompare(aLast.date);
+        }
+        return 0;
+      });
 
-      // Initialize last 14 days (ending at yesterday, since tickets are processed the day after)
-      for (let i = 0; i < 14; i++) {
-        const date = new Date();
-        date.setDate(date.getDate() - 1 - (13 - i)); // -1 to end at yesterday
-        const dateStr = date.toISOString().split("T")[0];
-        chartDataByDate[dateStr] = {};
-        for (const stop of stopsWithShows) {
-          chartDataByDate[dateStr][stop.id] = 0;
+      // Sort shows within each stop by date and time
+      for (const stop of sortedStops) {
+        stop.shows.sort((a: Show, b: Show) => {
+          const dateCompare = a.date.localeCompare(b.date);
+          if (dateCompare !== 0) return dateCompare;
+          return (a.time || "").localeCompare(b.time || "");
+        });
+      }
+
+      setStops(sortedStops);
+
+      // Helper functions for date calculations
+      const daysBetween = (start: string, end: string): number => {
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+        return Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      };
+
+      const addDays = (dateStr: string, days: number): string => {
+        const date = new Date(dateStr);
+        date.setDate(date.getDate() + days);
+        return date.toISOString().split('T')[0];
+      };
+
+      // Build show info map with sales_start_date
+      const showInfoMap: Record<string, { sales_start_date: string | null; stopId: string }> = {};
+      for (const stop of stopsWithShows) {
+        for (const show of stop.shows) {
+          showInfoMap[show.id] = { sales_start_date: show.sales_start_date || null, stopId: stop.id };
         }
       }
 
-      // Calculate deltas for each show and aggregate by stop
+      // Calculate distributed ticket data for chart with estimations
+      interface DistributedTicket {
+        date: string;
+        stopId: string;
+        tickets: number;
+        isEstimated: boolean;
+      }
+
+      const distributedData: DistributedTicket[] = [];
+
       for (const stop of stopsWithShows) {
         for (const show of stop.shows) {
           const { data: ticketSnapshots } = await supabase
@@ -176,29 +232,121 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             .order("sale_date", { ascending: true, nullsFirst: false })
             .order("reported_at", { ascending: true });
 
-          if (ticketSnapshots && ticketSnapshots.length > 0) {
-            let previousTotal = 0;
-            for (const snapshot of ticketSnapshots) {
-              const dateStr = snapshot.sale_date || snapshot.reported_at?.split("T")[0];
-              if (dateStr && chartDataByDate[dateStr]) {
-                const delta = snapshot.quantity_sold - previousTotal;
-                if (delta > 0) {
-                  chartDataByDate[dateStr][stop.id] += delta;
-                }
+          if (!ticketSnapshots || ticketSnapshots.length === 0) continue;
+
+          const salesStartDate = showInfoMap[show.id]?.sales_start_date;
+
+          // Handle single report case
+          if (ticketSnapshots.length === 1) {
+            const ticket = ticketSnapshots[0];
+            const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+            if (!ticketDate) continue;
+
+            // If sales_start_date exists and is before the report date, distribute
+            if (salesStartDate && salesStartDate < ticketDate) {
+              const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
+              const ticketsPerDay = ticket.quantity_sold / totalDays;
+
+              for (let i = 0; i < totalDays; i++) {
+                const date = addDays(salesStartDate, i);
+                const isLastDay = i === totalDays - 1;
+                distributedData.push({
+                  date,
+                  stopId: stop.id,
+                  tickets: Math.round(ticketsPerDay),
+                  isEstimated: !isLastDay,
+                });
               }
-              previousTotal = snapshot.quantity_sold;
             }
+            continue;
+          }
+
+          // Handle multiple reports - distribute deltas between consecutive reports
+          let previousDate: string | null = salesStartDate;
+          let previousTotal = 0;
+
+          for (let i = 0; i < ticketSnapshots.length; i++) {
+            const ticket = ticketSnapshots[i];
+            const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+            if (!ticketDate) continue;
+
+            const delta = ticket.quantity_sold - previousTotal;
+            if (delta <= 0) {
+              previousTotal = ticket.quantity_sold;
+              previousDate = ticketDate;
+              continue;
+            }
+
+            // Determine start date for distribution
+            const startDate = previousDate && previousDate < ticketDate ? previousDate : ticketDate;
+            const totalDays = daysBetween(startDate, ticketDate) + 1;
+
+            if (totalDays <= 1 || startDate === ticketDate) {
+              // Same day or no gap - all actual
+              distributedData.push({
+                date: ticketDate,
+                stopId: stop.id,
+                tickets: delta,
+                isEstimated: false,
+              });
+            } else {
+              // Distribute linearly across days
+              const ticketsPerDay = delta / totalDays;
+
+              for (let j = 0; j < totalDays; j++) {
+                const date = addDays(startDate, j);
+                const isLastDay = j === totalDays - 1;
+                distributedData.push({
+                  date,
+                  stopId: stop.id,
+                  tickets: Math.round(ticketsPerDay),
+                  isEstimated: !isLastDay,
+                });
+              }
+            }
+
+            previousTotal = ticket.quantity_sold;
+            previousDate = ticketDate;
           }
         }
       }
 
-      // Convert to chart format
-      const formattedChartData = Object.entries(chartDataByDate)
+      // Aggregate distributed data by date and stop, separating actual vs estimated
+      const ticketsByDateAndStop: Record<string, Record<string, { actual: number; estimated: number }>> = {};
+
+      // Initialize all 14 days
+      for (let i = 0; i < 14; i++) {
+        const date = new Date();
+        date.setDate(date.getDate() - 1 - (13 - i));
+        const dateStr = date.toISOString().split('T')[0];
+        ticketsByDateAndStop[dateStr] = {};
+        for (const stop of stopsWithShows) {
+          ticketsByDateAndStop[dateStr][stop.id] = { actual: 0, estimated: 0 };
+        }
+      }
+
+      // Fill in distributed data
+      for (const item of distributedData) {
+        if (ticketsByDateAndStop[item.date] && ticketsByDateAndStop[item.date][item.stopId]) {
+          if (item.isEstimated) {
+            ticketsByDateAndStop[item.date][item.stopId].estimated += item.tickets;
+          } else {
+            ticketsByDateAndStop[item.date][item.stopId].actual += item.tickets;
+          }
+        }
+      }
+
+      // Convert to chart format with separate actual and estimated values
+      const formattedChartData = Object.entries(ticketsByDateAndStop)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, stops]) => ({
-          date,
-          ...stops,
-        }));
+        .map(([date, stops]) => {
+          const dataPoint: { date: string; [key: string]: string | number } = { date };
+          for (const [stopId, values] of Object.entries(stops)) {
+            dataPoint[stopId] = values.actual;
+            dataPoint[`${stopId}_estimated`] = values.estimated;
+          }
+          return dataPoint;
+        });
 
       setChartData(formattedChartData);
     }

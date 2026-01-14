@@ -110,8 +110,13 @@ async function getDashboardData() {
     }
   }
 
+  // Sort projects alphabetically by name
+  const sortedProjects = [...projects].sort((a, b) =>
+    a.name.localeCompare(b.name, 'nb-NO', { sensitivity: 'base' })
+  );
+
   // Process projects with stats (all in memory now)
-  const projectsWithStats: ProjectWithStats[] = projects.map((project) => {
+  const projectsWithStats: ProjectWithStats[] = sortedProjects.map((project) => {
     const stops = stopsByProject[project.id] || [];
     const totalCapacity = stops.reduce((sum, s) => sum + (s.capacity || 0), 0);
 

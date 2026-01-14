@@ -42,11 +42,13 @@ interface Ticket {
 
 interface Show {
   id: string;
+  name: string | null;
   date: string;
   time: string | null;
   capacity: number | null;
   status: "upcoming" | "completed" | "cancelled";
   notes: string | null;
+  sales_start_date: string | null;
   tickets_sold: number;
   revenue: number;
 }
@@ -136,25 +138,36 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     return `kl. ${timeStr.slice(0, 5)}`;
   };
 
+  // Helper functions for date calculations
+  const daysBetween = (start: string, end: string): number => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    return Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  const addDays = (dateStr: string, days: number): string => {
+    const date = new Date(dateStr);
+    date.setDate(date.getDate() + days);
+    return date.toISOString().split('T')[0];
+  };
+
   async function loadStopChartData() {
     if (stopChartData.length > 0) return; // Already loaded
 
     setLoadingCharts(true);
     const supabase = createClient();
 
-    // Initialize last 14 days (ending at yesterday, since tickets are processed the day after)
-    const chartDataByDate: Record<string, Record<string, number>> = {};
-    for (let i = 0; i < 14; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - 1 - (13 - i)); // -1 to end at yesterday
-      const dateStr = date.toISOString().split("T")[0];
-      chartDataByDate[dateStr] = {};
-      for (const show of stop.shows) {
-        chartDataByDate[dateStr][show.id] = 0;
-      }
+    // Calculate distributed ticket data for chart with estimations
+    interface DistributedTicket {
+      date: string;
+      showId: string;
+      tickets: number;
+      isEstimated: boolean;
     }
 
-    // Calculate deltas for each show
+    const distributedData: DistributedTicket[] = [];
+
+    // Calculate deltas for each show with estimation distribution
     for (const show of stop.shows) {
       const { data: ticketSnapshots } = await supabase
         .from("tickets")
@@ -163,28 +176,114 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
         .order("sale_date", { ascending: true, nullsFirst: false })
         .order("reported_at", { ascending: true });
 
-      if (ticketSnapshots && ticketSnapshots.length > 0) {
-        let previousTotal = 0;
-        for (const snapshot of ticketSnapshots) {
-          const dateStr = snapshot.sale_date || snapshot.reported_at?.split("T")[0];
-          if (dateStr && chartDataByDate[dateStr]) {
-            const delta = snapshot.quantity_sold - previousTotal;
-            if (delta > 0) {
-              chartDataByDate[dateStr][show.id] += delta;
-            }
+      if (!ticketSnapshots || ticketSnapshots.length === 0) continue;
+
+      const salesStartDate = show.sales_start_date;
+
+      // Handle single report case
+      if (ticketSnapshots.length === 1) {
+        const ticket = ticketSnapshots[0];
+        const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+        if (!ticketDate) continue;
+
+        if (salesStartDate && salesStartDate < ticketDate) {
+          const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
+          const ticketsPerDay = ticket.quantity_sold / totalDays;
+
+          for (let i = 0; i < totalDays; i++) {
+            const date = addDays(salesStartDate, i);
+            const isLastDay = i === totalDays - 1;
+            distributedData.push({
+              date,
+              showId: show.id,
+              tickets: Math.round(ticketsPerDay),
+              isEstimated: !isLastDay,
+            });
           }
-          previousTotal = snapshot.quantity_sold;
+        }
+        continue;
+      }
+
+      // Handle multiple reports
+      let previousDate: string | null = salesStartDate;
+      let previousTotal = 0;
+
+      for (let i = 0; i < ticketSnapshots.length; i++) {
+        const ticket = ticketSnapshots[i];
+        const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+        if (!ticketDate) continue;
+
+        const delta = ticket.quantity_sold - previousTotal;
+        if (delta <= 0) {
+          previousTotal = ticket.quantity_sold;
+          previousDate = ticketDate;
+          continue;
+        }
+
+        const startDate = previousDate && previousDate < ticketDate ? previousDate : ticketDate;
+        const totalDays = daysBetween(startDate, ticketDate) + 1;
+
+        if (totalDays <= 1 || startDate === ticketDate) {
+          distributedData.push({
+            date: ticketDate,
+            showId: show.id,
+            tickets: delta,
+            isEstimated: false,
+          });
+        } else {
+          const ticketsPerDay = delta / totalDays;
+
+          for (let j = 0; j < totalDays; j++) {
+            const date = addDays(startDate, j);
+            const isLastDay = j === totalDays - 1;
+            distributedData.push({
+              date,
+              showId: show.id,
+              tickets: Math.round(ticketsPerDay),
+              isEstimated: !isLastDay,
+            });
+          }
+        }
+
+        previousTotal = ticket.quantity_sold;
+        previousDate = ticketDate;
+      }
+    }
+
+    // Aggregate distributed data by date and show
+    const ticketsByDateAndShow: Record<string, Record<string, { actual: number; estimated: number }>> = {};
+
+    for (let i = 0; i < 14; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() - 1 - (13 - i));
+      const dateStr = date.toISOString().split('T')[0];
+      ticketsByDateAndShow[dateStr] = {};
+      for (const show of stop.shows) {
+        ticketsByDateAndShow[dateStr][show.id] = { actual: 0, estimated: 0 };
+      }
+    }
+
+    for (const item of distributedData) {
+      if (ticketsByDateAndShow[item.date] && ticketsByDateAndShow[item.date][item.showId]) {
+        if (item.isEstimated) {
+          ticketsByDateAndShow[item.date][item.showId].estimated += item.tickets;
+        } else {
+          ticketsByDateAndShow[item.date][item.showId].actual += item.tickets;
         }
       }
     }
 
     // Convert to chart format
-    const formattedData = Object.entries(chartDataByDate)
+    const formattedData = Object.entries(ticketsByDateAndShow)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, shows]) => ({
-        date,
-        ...shows,
-      }));
+      .map(([date, shows]) => {
+        const dataPoint: { date: string; [key: string]: string | number } = { date };
+        for (const [showId, values] of Object.entries(shows)) {
+          dataPoint[showId] = values.actual;
+          dataPoint[`${showId}_estimated`] = values.estimated;
+        }
+        return dataPoint;
+      });
 
     setStopChartData(formattedData);
     setLoadingCharts(false);
@@ -194,17 +293,18 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     if (showChartData[showId]) return; // Already loaded
 
     const supabase = createClient();
+    const show = stop.shows.find(s => s.id === showId);
+    if (!show) return;
 
-    // Initialize last 14 days for single show (ending at yesterday)
-    const chartDataByDate: Record<string, number> = {};
-    for (let i = 0; i < 14; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - 1 - (13 - i)); // -1 to end at yesterday
-      const dateStr = date.toISOString().split("T")[0];
-      chartDataByDate[dateStr] = 0;
+    // Calculate distributed ticket data
+    interface DistributedTicket {
+      date: string;
+      tickets: number;
+      isEstimated: boolean;
     }
 
-    // Get ticket snapshots and calculate deltas
+    const distributedData: DistributedTicket[] = [];
+
     const { data: ticketSnapshots } = await supabase
       .from("tickets")
       .select("quantity_sold, sale_date, reported_at")
@@ -213,25 +313,97 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
       .order("reported_at", { ascending: true });
 
     if (ticketSnapshots && ticketSnapshots.length > 0) {
-      let previousTotal = 0;
-      for (const snapshot of ticketSnapshots) {
-        const dateStr = snapshot.sale_date || snapshot.reported_at?.split("T")[0];
-        if (dateStr && chartDataByDate[dateStr] !== undefined) {
-          const delta = snapshot.quantity_sold - previousTotal;
-          if (delta > 0) {
-            chartDataByDate[dateStr] += delta;
+      const salesStartDate = show.sales_start_date;
+
+      if (ticketSnapshots.length === 1) {
+        const ticket = ticketSnapshots[0];
+        const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+        if (ticketDate && salesStartDate && salesStartDate < ticketDate) {
+          const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
+          const ticketsPerDay = ticket.quantity_sold / totalDays;
+
+          for (let i = 0; i < totalDays; i++) {
+            const date = addDays(salesStartDate, i);
+            const isLastDay = i === totalDays - 1;
+            distributedData.push({
+              date,
+              tickets: Math.round(ticketsPerDay),
+              isEstimated: !isLastDay,
+            });
           }
         }
-        previousTotal = snapshot.quantity_sold;
+      } else {
+        let previousDate: string | null = salesStartDate;
+        let previousTotal = 0;
+
+        for (let i = 0; i < ticketSnapshots.length; i++) {
+          const ticket = ticketSnapshots[i];
+          const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+          if (!ticketDate) continue;
+
+          const delta = ticket.quantity_sold - previousTotal;
+          if (delta <= 0) {
+            previousTotal = ticket.quantity_sold;
+            previousDate = ticketDate;
+            continue;
+          }
+
+          const startDate = previousDate && previousDate < ticketDate ? previousDate : ticketDate;
+          const totalDays = daysBetween(startDate, ticketDate) + 1;
+
+          if (totalDays <= 1 || startDate === ticketDate) {
+            distributedData.push({
+              date: ticketDate,
+              tickets: delta,
+              isEstimated: false,
+            });
+          } else {
+            const ticketsPerDay = delta / totalDays;
+
+            for (let j = 0; j < totalDays; j++) {
+              const date = addDays(startDate, j);
+              const isLastDay = j === totalDays - 1;
+              distributedData.push({
+                date,
+                tickets: Math.round(ticketsPerDay),
+                isEstimated: !isLastDay,
+              });
+            }
+          }
+
+          previousTotal = ticket.quantity_sold;
+          previousDate = ticketDate;
+        }
       }
     }
 
-    // Convert to chart format with single entity
-    const formattedData = Object.entries(chartDataByDate)
+    // Aggregate by date
+    const ticketsByDate: Record<string, { actual: number; estimated: number }> = {};
+
+    for (let i = 0; i < 14; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() - 1 - (13 - i));
+      const dateStr = date.toISOString().split('T')[0];
+      ticketsByDate[dateStr] = { actual: 0, estimated: 0 };
+    }
+
+    for (const item of distributedData) {
+      if (ticketsByDate[item.date]) {
+        if (item.isEstimated) {
+          ticketsByDate[item.date].estimated += item.tickets;
+        } else {
+          ticketsByDate[item.date].actual += item.tickets;
+        }
+      }
+    }
+
+    // Convert to chart format
+    const formattedData = Object.entries(ticketsByDate)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, tickets]) => ({
+      .map(([date, values]) => ({
         date,
-        [showId]: tickets,
+        [showId]: values.actual,
+        [`${showId}_estimated`]: values.estimated,
       }));
 
     setShowChartData((prev) => ({
@@ -336,7 +508,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
 
   function openReportsDialog(show: Show) {
     setSelectedShowId(show.id);
-    setSelectedShowName(`${formatDate(show.date)} ${stop.name}`);
+    setSelectedShowName(show.name || `${formatDate(show.date)} ${stop.name}`);
     loadTickets(show.id);
     setIsReportsDialogOpen(true);
   }
@@ -398,7 +570,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                   data={stopChartData}
                   entities={stop.shows.map((s) => ({
                     id: s.id,
-                    name: `${formatDate(s.date)}`,
+                    name: s.name || formatDate(s.date),
                   }))}
                   title="Billettutvikling per show"
                   height={180}
@@ -445,7 +617,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 text-sm">
                           <span className="font-medium text-gray-900">
-                            {formatDate(show.date)} {stop.name}
+                            {show.name || `${formatDate(show.date)} ${stop.name}`}
                           </span>
                           {show.time && (
                             <span className="text-gray-500">{formatTime(show.time)}</span>
@@ -494,7 +666,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                           <TicketsChart
                             data={showChartData[show.id]}
                             entities={[{ id: show.id, name: "Billetter" }]}
-                            title={`Billettutvikling - ${formatDate(show.date)}`}
+                            title={`Billettutvikling - ${show.name || formatDate(show.date)}`}
                             height={150}
                           />
                         ) : (
