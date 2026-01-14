@@ -4,9 +4,8 @@ import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
-  ChartTooltipContent,
 } from "@/components/ui/chart";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Cell, ReferenceLine } from "recharts";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ReferenceLine } from "recharts";
 
 interface TicketsByTourChartProps {
   data: Array<{
@@ -31,6 +30,16 @@ const PROJECT_COLORS = [
   "#F97316", // orange
 ];
 
+// Check if there's any estimated data in the dataset
+function hasEstimatedData(data: Array<{ [key: string]: string | number }>, projects: Array<{ id: string }>): boolean {
+  return data.some(day =>
+    projects.some(project => {
+      const estimated = day[`${project.id}_estimated`];
+      return typeof estimated === 'number' && estimated > 0;
+    })
+  );
+}
+
 export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) {
   // Build chart config dynamically based on projects
   const chartConfig = projects.reduce((acc, project, index) => {
@@ -53,13 +62,18 @@ export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) 
     return new Intl.NumberFormat("nb-NO").format(value);
   };
 
-  // Calculate total per day for the label above bars
+  // Calculate total per day for the label above bars (actual + estimated)
   const dataWithTotals = data.map(day => {
     const total = projects.reduce((sum, project) => {
-      return sum + (Number(day[project.id]) || 0);
+      const actual = Number(day[project.id]) || 0;
+      const estimated = Number(day[`${project.id}_estimated`]) || 0;
+      return sum + actual + estimated;
     }, 0);
     return { ...day, total };
   });
+
+  // Check if we have any estimated data to show
+  const showEstimatedLegend = hasEstimatedData(data, projects);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -71,6 +85,33 @@ export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) 
           data={dataWithTotals}
           margin={{ top: 20, right: 0, left: 0, bottom: 0 }}
         >
+          {/* SVG pattern definitions for estimated (striped) bars */}
+          <defs>
+            {projects.map((project, index) => {
+              const color = PROJECT_COLORS[index % PROJECT_COLORS.length];
+              return (
+                <pattern
+                  key={`stripe-${project.id}`}
+                  id={`stripe-${project.id}`}
+                  patternUnits="userSpaceOnUse"
+                  width="6"
+                  height="6"
+                  patternTransform="rotate(45)"
+                >
+                  <rect width="6" height="6" fill={color} fillOpacity="0.25" />
+                  <line
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="6"
+                    stroke={color}
+                    strokeWidth="3"
+                    strokeOpacity="0.6"
+                  />
+                </pattern>
+              );
+            })}
+          </defs>
           <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#E5E7EB" />
           <XAxis
             dataKey="date"
@@ -92,29 +133,62 @@ export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) 
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
 
+              // Group data by project (combining actual + estimated)
+              const projectData: Record<string, { actual: number; estimated: number; color: string; name: string }> = {};
+
+              for (const entry of payload) {
+                const key = String(entry.dataKey);
+                const isEstimated = key.endsWith('_estimated');
+                const projectId = isEstimated ? key.replace('_estimated', '') : key;
+                const projectIndex = projects.findIndex(p => p.id === projectId);
+
+                if (projectIndex === -1) continue;
+
+                if (!projectData[projectId]) {
+                  projectData[projectId] = {
+                    actual: 0,
+                    estimated: 0,
+                    color: PROJECT_COLORS[projectIndex % PROJECT_COLORS.length],
+                    name: projects[projectIndex].name,
+                  };
+                }
+
+                if (isEstimated) {
+                  projectData[projectId].estimated = Number(entry.value) || 0;
+                } else {
+                  projectData[projectId].actual = Number(entry.value) || 0;
+                }
+              }
+
               return (
                 <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 min-w-[180px]">
                   <p className="text-sm font-medium text-gray-900 mb-2 border-b border-gray-100 pb-2">
                     {formatDate(label)}
                   </p>
                   <div className="space-y-1.5">
-                    {payload.map((entry, index) => {
-                      const projectIndex = projects.findIndex(p => p.id === entry.dataKey);
-                      const projectName = projects[projectIndex]?.name || entry.dataKey;
-                      const color = PROJECT_COLORS[projectIndex % PROJECT_COLORS.length];
+                    {Object.entries(projectData).map(([projectId, data]) => {
+                      const total = data.actual + data.estimated;
+                      if (total === 0) return null;
 
                       return (
-                        <div key={index} className="flex items-center justify-between gap-4">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                              style={{ backgroundColor: color }}
-                            />
-                            <span className="text-sm text-gray-600">{projectName}</span>
+                        <div key={projectId} className="space-y-0.5">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                                style={{ backgroundColor: data.color }}
+                              />
+                              <span className="text-sm text-gray-600">{data.name}</span>
+                            </div>
+                            <span className="text-sm font-semibold" style={{ color: data.color }}>
+                              {formatNumber(total)}
+                            </span>
                           </div>
-                          <span className="text-sm font-semibold" style={{ color }}>
-                            {formatNumber(Number(entry.value))}
-                          </span>
+                          {data.estimated > 0 && (
+                            <div className="flex justify-end text-xs text-gray-400 italic">
+                              ({formatNumber(data.estimated)} estimert)
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -123,6 +197,17 @@ export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) 
               );
             }}
           />
+          {/* Estimated bars (striped pattern) - render first to be at bottom of stack */}
+          {projects.map((project) => (
+            <Bar
+              key={`${project.id}_estimated`}
+              dataKey={`${project.id}_estimated`}
+              stackId="tickets"
+              fill={`url(#stripe-${project.id})`}
+              radius={[0, 0, 0, 0]}
+            />
+          ))}
+          {/* Actual bars (solid color) - render second to be on top of stack */}
           {projects.map((project, index) => (
             <Bar
               key={project.id}
@@ -137,7 +222,7 @@ export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) 
 
       {/* Legend */}
       {projects.length > 0 && (
-        <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-gray-100">
+        <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t border-gray-100">
           {projects.map((project, index) => (
             <div key={project.id} className="flex items-center gap-2">
               <div
@@ -147,6 +232,19 @@ export function TicketsByTourChart({ data, projects }: TicketsByTourChartProps) 
               <span className="text-xs text-gray-600">{project.name}</span>
             </div>
           ))}
+          {/* Estimated indicator - only show if there's estimated data */}
+          {showEstimatedLegend && (
+            <div className="flex items-center gap-2 ml-2 pl-4 border-l border-gray-200">
+              <div
+                className="w-3 h-3 rounded-sm"
+                style={{
+                  backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(107, 114, 128, 0.4) 2px, rgba(107, 114, 128, 0.4) 4px)',
+                  backgroundColor: 'rgba(107, 114, 128, 0.15)',
+                }}
+              />
+              <span className="text-xs text-gray-500 italic">Estimert</span>
+            </div>
+          )}
         </div>
       )}
     </div>

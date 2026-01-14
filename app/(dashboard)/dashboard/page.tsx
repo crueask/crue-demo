@@ -61,19 +61,21 @@ async function getDashboardData() {
     allStopIds.push(stop.id);
   }
 
-  // Fetch all shows for all stops in one query
+  // Fetch all shows for all stops in one query (including sales_start_date for distribution)
   const { data: allShows } = allStopIds.length > 0
-    ? await adminClient.from("shows").select("id, stop_id, capacity").in("stop_id", allStopIds)
+    ? await adminClient.from("shows").select("id, stop_id, capacity, sales_start_date").in("stop_id", allStopIds)
     : { data: [] };
 
-  const showsByStop: Record<string, Array<{ id: string; stop_id: string; capacity: number }>> = {};
+  const showsByStop: Record<string, Array<{ id: string; stop_id: string; capacity: number; sales_start_date: string | null }>> = {};
   const allShowIds: string[] = [];
+  const showInfoMap: Record<string, { sales_start_date: string | null }> = {};
   for (const show of allShows || []) {
     if (!showsByStop[show.stop_id]) {
       showsByStop[show.stop_id] = [];
     }
     showsByStop[show.stop_id].push(show);
     allShowIds.push(show.id);
+    showInfoMap[show.id] = { sales_start_date: show.sales_start_date };
   }
 
   // Fetch all tickets for all shows in one query
@@ -147,43 +149,129 @@ async function getDashboardData() {
   const activeProjects = projects.filter(p => p.status === "active").length;
   const totalRevenueWeek = projectsWithStats.reduce((sum, p) => sum + p.revenue, 0);
 
-  // Calculate daily deltas for chart (all in memory)
-  // Skip the first report for each show - we only want to show actual daily changes,
-  // not the initial baseline (which would show all tickets as sold on day 1)
-  const dailyDeltasByShowAndDate: Record<string, Record<string, number>> = {};
+  // Helper to calculate days between two dates
+  const daysBetween = (start: string, end: string): number => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    return Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  // Helper to add days to a date string
+  const addDays = (dateStr: string, days: number): string => {
+    const date = new Date(dateStr);
+    date.setDate(date.getDate() + days);
+    return date.toISOString().split('T')[0];
+  };
+
+  // Calculate distributed ticket data for chart
+  // Distributes sales linearly across gaps between reports
+  interface DistributedTicket {
+    date: string;
+    projectId: string;
+    tickets: number;
+    isEstimated: boolean;
+  }
+
+  const distributedData: DistributedTicket[] = [];
 
   for (const showId of allShowIds) {
     const tickets = ticketsByShow[showId];
-    // Need at least 2 reports to calculate meaningful deltas
-    if (tickets && tickets.length > 1) {
-      // Sort ascending for delta calculation
-      const sortedTickets = [...tickets].sort((a, b) => {
-        const dateA = a.sale_date || a.reported_at?.split('T')[0] || '';
-        const dateB = b.sale_date || b.reported_at?.split('T')[0] || '';
-        return dateA.localeCompare(dateB);
-      });
+    const projectId = showToProject[showId];
+    if (!tickets || tickets.length === 0 || !projectId) continue;
 
-      // Start from the second report, using the first as the baseline
-      let previousTotal = sortedTickets[0].quantity_sold;
-      for (let i = 1; i < sortedTickets.length; i++) {
-        const snapshot = sortedTickets[i];
-        const dateStr = snapshot.sale_date || snapshot.reported_at?.split('T')[0];
-        if (dateStr) {
-          const delta = snapshot.quantity_sold - previousTotal;
-          if (!dailyDeltasByShowAndDate[showId]) {
-            dailyDeltasByShowAndDate[showId] = {};
-          }
-          if (!dailyDeltasByShowAndDate[showId][dateStr] || delta > dailyDeltasByShowAndDate[showId][dateStr]) {
-            dailyDeltasByShowAndDate[showId][dateStr] = delta > 0 ? delta : 0;
-          }
-          previousTotal = snapshot.quantity_sold;
+    const salesStartDate = showInfoMap[showId]?.sales_start_date;
+
+    // Sort tickets by sale_date ascending
+    const sortedTickets = [...tickets].sort((a, b) => {
+      const dateA = a.sale_date || a.reported_at?.split('T')[0] || '';
+      const dateB = b.sale_date || b.reported_at?.split('T')[0] || '';
+      return dateA.localeCompare(dateB);
+    });
+
+    // Handle single report case
+    if (sortedTickets.length === 1) {
+      const ticket = sortedTickets[0];
+      const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+      if (!ticketDate) continue;
+
+      // If sales_start_date exists and is before the report date, distribute
+      if (salesStartDate && salesStartDate < ticketDate) {
+        const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
+        const ticketsPerDay = ticket.quantity_sold / totalDays;
+
+        for (let i = 0; i < totalDays; i++) {
+          const date = addDays(salesStartDate, i);
+          const isLastDay = i === totalDays - 1;
+          distributedData.push({
+            date,
+            projectId,
+            tickets: Math.round(ticketsPerDay),
+            isEstimated: !isLastDay, // Only the actual report day is not estimated
+          });
+        }
+      } else {
+        // No sales_start_date or it's >= report date - show all on report day as actual
+        distributedData.push({
+          date: ticketDate,
+          projectId,
+          tickets: ticket.quantity_sold,
+          isEstimated: false,
+        });
+      }
+      continue;
+    }
+
+    // Handle multiple reports - distribute deltas between consecutive reports
+    let previousDate: string | null = salesStartDate;
+    let previousTotal = 0;
+
+    for (let i = 0; i < sortedTickets.length; i++) {
+      const ticket = sortedTickets[i];
+      const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+      if (!ticketDate) continue;
+
+      const delta = ticket.quantity_sold - previousTotal;
+      if (delta <= 0) {
+        previousTotal = ticket.quantity_sold;
+        previousDate = ticketDate;
+        continue;
+      }
+
+      // Determine start date for distribution
+      const startDate = previousDate && previousDate < ticketDate ? previousDate : ticketDate;
+      const totalDays = daysBetween(startDate, ticketDate) + 1;
+
+      if (totalDays <= 1 || startDate === ticketDate) {
+        // Same day or no gap - all actual
+        distributedData.push({
+          date: ticketDate,
+          projectId,
+          tickets: delta,
+          isEstimated: false,
+        });
+      } else {
+        // Distribute linearly across days
+        const ticketsPerDay = delta / totalDays;
+
+        for (let j = 0; j < totalDays; j++) {
+          const date = addDays(startDate, j);
+          const isLastDay = j === totalDays - 1;
+          distributedData.push({
+            date,
+            projectId,
+            tickets: Math.round(ticketsPerDay),
+            isEstimated: !isLastDay, // Only the actual report day is not estimated
+          });
         }
       }
+
+      previousTotal = ticket.quantity_sold;
+      previousDate = ticketDate;
     }
   }
 
-  // Aggregate deltas by date and project
-  const ticketsByDateAndProject: Record<string, Record<string, number>> = {};
+  // Aggregate distributed data by date and project, separating actual vs estimated
+  const ticketsByDateAndProject: Record<string, Record<string, { actual: number; estimated: number }>> = {};
 
   // Initialize all 14 days
   for (let i = 0; i < 14; i++) {
@@ -192,46 +280,49 @@ async function getDashboardData() {
     const dateStr = date.toISOString().split('T')[0];
     ticketsByDateAndProject[dateStr] = {};
     for (const project of projectsWithStats) {
-      ticketsByDateAndProject[dateStr][project.id] = 0;
+      ticketsByDateAndProject[dateStr][project.id] = { actual: 0, estimated: 0 };
     }
   }
 
-  // Fill in daily deltas by project
-  for (const [showId, dateDeltas] of Object.entries(dailyDeltasByShowAndDate)) {
-    const projectId = showToProject[showId];
-    if (projectId) {
-      for (const [dateStr, delta] of Object.entries(dateDeltas)) {
-        if (ticketsByDateAndProject[dateStr]) {
-          ticketsByDateAndProject[dateStr][projectId] += delta;
-        }
+  // Fill in distributed data
+  for (const item of distributedData) {
+    if (ticketsByDateAndProject[item.date] && ticketsByDateAndProject[item.date][item.projectId]) {
+      if (item.isEstimated) {
+        ticketsByDateAndProject[item.date][item.projectId].estimated += item.tickets;
+      } else {
+        ticketsByDateAndProject[item.date][item.projectId].actual += item.tickets;
       }
     }
   }
 
-  // Convert to chart format
+  // Convert to chart format with separate actual and estimated values
   const chartData = Object.entries(ticketsByDateAndProject)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, projects]) => ({
-      date,
-      ...projects,
-    }));
+    .map(([date, projects]) => {
+      const dataPoint: { date: string; [key: string]: string | number } = { date };
+      for (const [projectId, values] of Object.entries(projects)) {
+        dataPoint[projectId] = values.actual;
+        dataPoint[`${projectId}_estimated`] = values.estimated;
+      }
+      return dataPoint;
+    });
 
-  // Calculate yesterday's tickets
+  // Calculate yesterday's tickets (actual + estimated)
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = yesterday.toISOString().split('T')[0];
   const yesterdayData = ticketsByDateAndProject[yesterdayStr];
   const ticketsYesterday = yesterdayData
-    ? Object.values(yesterdayData).reduce((sum, val) => sum + val, 0)
+    ? Object.values(yesterdayData).reduce((sum, val) => sum + val.actual + val.estimated, 0)
     : 0;
 
-  // Calculate last 7 days tickets
+  // Calculate last 7 days tickets (actual + estimated)
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   let ticketsLast7Days = 0;
   for (const [dateStr, projectData] of Object.entries(ticketsByDateAndProject)) {
     if (dateStr >= sevenDaysAgo.toISOString().split('T')[0]) {
-      ticketsLast7Days += Object.values(projectData).reduce((sum, val) => sum + val, 0);
+      ticketsLast7Days += Object.values(projectData).reduce((sum, val) => sum + val.actual + val.estimated, 0);
     }
   }
 
