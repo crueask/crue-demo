@@ -242,6 +242,8 @@ async function getDashboardData() {
       if (!ticketDate) continue;
 
       const delta = ticket.quantity_sold - previousTotal;
+
+      // Skip if delta is 0 or negative (no new tickets sold)
       if (delta <= 0) {
         previousTotal = ticket.quantity_sold;
         previousDate = ticketDate;
@@ -253,7 +255,7 @@ async function getDashboardData() {
       const canDistribute = previousDate && previousDate < ticketDate;
 
       if (!canDistribute) {
-        // No distribution - show actual on report date
+        // No distribution - show actual on effective sales date
         distributedData.push({
           date: ticketDate,
           projectId,
