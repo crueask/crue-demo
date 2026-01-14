@@ -186,17 +186,28 @@ async function getDashboardData() {
 
     const salesStartDate = showInfoMap[showId]?.sales_start_date;
 
-    // Sort tickets by sale_date ascending
+    // Helper to get the effective sales date from a ticket
+    // Reports received on a given day represent sales from the previous day
+    const getEffectiveSalesDate = (ticket: TicketRow): string | null => {
+      if (ticket.sale_date) return ticket.sale_date;
+      if (ticket.reported_at) {
+        // Subtract one day from reported_at to get actual sales date
+        return addDays(ticket.reported_at.split('T')[0], -1);
+      }
+      return null;
+    };
+
+    // Sort tickets by effective sales date ascending
     const sortedTickets = [...tickets].sort((a, b) => {
-      const dateA = a.sale_date || a.reported_at?.split('T')[0] || '';
-      const dateB = b.sale_date || b.reported_at?.split('T')[0] || '';
+      const dateA = getEffectiveSalesDate(a) || '';
+      const dateB = getEffectiveSalesDate(b) || '';
       return dateA.localeCompare(dateB);
     });
 
     // Handle single report case
     if (sortedTickets.length === 1) {
       const ticket = sortedTickets[0];
-      const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+      const ticketDate = getEffectiveSalesDate(ticket);
       if (!ticketDate) continue;
 
       // If sales_start_date exists and is before the report date, distribute
@@ -227,7 +238,7 @@ async function getDashboardData() {
 
     for (let i = 0; i < sortedTickets.length; i++) {
       const ticket = sortedTickets[i];
-      const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+      const ticketDate = getEffectiveSalesDate(ticket);
       if (!ticketDate) continue;
 
       const delta = ticket.quantity_sold - previousTotal;

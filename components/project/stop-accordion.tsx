@@ -180,10 +180,21 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
 
       const salesStartDate = show.sales_start_date;
 
+      // Helper to get the effective sales date from a ticket
+      // Reports received on a given day represent sales from the previous day
+      const getEffectiveSalesDate = (ticket: { sale_date: string | null; reported_at: string | null }): string | null => {
+        if (ticket.sale_date) return ticket.sale_date;
+        if (ticket.reported_at) {
+          // Subtract one day from reported_at to get actual sales date
+          return addDays(ticket.reported_at.split('T')[0], -1);
+        }
+        return null;
+      };
+
       // Handle single report case
       if (ticketSnapshots.length === 1) {
         const ticket = ticketSnapshots[0];
-        const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+        const ticketDate = getEffectiveSalesDate(ticket);
         if (!ticketDate) continue;
 
         if (salesStartDate && salesStartDate < ticketDate) {
@@ -211,7 +222,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
 
       for (let i = 0; i < ticketSnapshots.length; i++) {
         const ticket = ticketSnapshots[i];
-        const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+        const ticketDate = getEffectiveSalesDate(ticket);
         if (!ticketDate) continue;
 
         const delta = ticket.quantity_sold - previousTotal;
@@ -329,9 +340,20 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     if (ticketSnapshots && ticketSnapshots.length > 0) {
       const salesStartDate = show.sales_start_date;
 
+      // Helper to get the effective sales date from a ticket
+      // Reports received on a given day represent sales from the previous day
+      const getEffectiveSalesDate = (ticket: { sale_date: string | null; reported_at: string | null }): string | null => {
+        if (ticket.sale_date) return ticket.sale_date;
+        if (ticket.reported_at) {
+          // Subtract one day from reported_at to get actual sales date
+          return addDays(ticket.reported_at.split('T')[0], -1);
+        }
+        return null;
+      };
+
       if (ticketSnapshots.length === 1) {
         const ticket = ticketSnapshots[0];
-        const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+        const ticketDate = getEffectiveSalesDate(ticket);
         if (ticketDate && salesStartDate && salesStartDate < ticketDate) {
           const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
           const ticketsPerDay = ticket.quantity_sold / totalDays;
@@ -352,7 +374,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
 
         for (let i = 0; i < ticketSnapshots.length; i++) {
           const ticket = ticketSnapshots[i];
-          const ticketDate = ticket.sale_date || ticket.reported_at?.split('T')[0];
+          const ticketDate = getEffectiveSalesDate(ticket);
           if (!ticketDate) continue;
 
           const delta = ticket.quantity_sold - previousTotal;
