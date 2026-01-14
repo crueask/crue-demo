@@ -152,7 +152,6 @@ async function getDashboardData() {
   });
 
   const activeProjects = projects.filter(p => p.status === "active").length;
-  const totalRevenueWeek = projectsWithStats.reduce((sum, p) => sum + p.revenue, 0);
 
   // Helper to calculate days between two dates
   const daysBetween = (start: string, end: string): number => {
@@ -174,6 +173,7 @@ async function getDashboardData() {
     date: string;
     projectId: string;
     tickets: number;
+    revenue: number;
     isEstimated: boolean;
   }
 
@@ -214,6 +214,7 @@ async function getDashboardData() {
       if (salesStartDate && salesStartDate < ticketDate) {
         const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
         const ticketsPerDay = ticket.quantity_sold / totalDays;
+        const revenuePerDay = Number(ticket.revenue) / totalDays;
 
         for (let i = 0; i < totalDays; i++) {
           const date = addDays(salesStartDate, i);
@@ -222,6 +223,7 @@ async function getDashboardData() {
             date,
             projectId,
             tickets: Math.round(ticketsPerDay),
+            revenue: Math.round(revenuePerDay),
             isEstimated: !isLastDay, // Only the actual report day is not estimated
           });
         }
@@ -235,6 +237,7 @@ async function getDashboardData() {
     // Only use salesStartDate for distribution if it exists
     let previousDate: string | null = salesStartDate;
     let previousTotal = 0;
+    let previousRevenue = 0;
     let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
 
     for (let i = 0; i < sortedTickets.length; i++) {
@@ -243,12 +246,14 @@ async function getDashboardData() {
       if (!ticketDate) continue;
 
       const delta = ticket.quantity_sold - previousTotal;
+      const revenueDelta = Number(ticket.revenue) - previousRevenue;
 
       // For the first report without salesStartDate, we can't show anything
       // (we don't know when sales started, so no baseline to compare against)
       // But we establish the baseline for subsequent reports
       if (!hasBaseline) {
         previousTotal = ticket.quantity_sold;
+        previousRevenue = Number(ticket.revenue);
         previousDate = ticketDate;
         hasBaseline = true; // Now we have a baseline for future reports
         continue;
@@ -258,6 +263,7 @@ async function getDashboardData() {
       // But still update tracking variables
       if (delta <= 0) {
         previousTotal = ticket.quantity_sold;
+        previousRevenue = Number(ticket.revenue);
         previousDate = ticketDate;
         continue;
       }
@@ -271,6 +277,7 @@ async function getDashboardData() {
           date: ticketDate,
           projectId,
           tickets: delta,
+          revenue: revenueDelta > 0 ? revenueDelta : 0,
           isEstimated: false,
         });
       } else {
@@ -282,11 +289,13 @@ async function getDashboardData() {
             date: ticketDate,
             projectId,
             tickets: delta,
+            revenue: revenueDelta > 0 ? revenueDelta : 0,
             isEstimated: false,
           });
         } else {
           // Distribute linearly across days
           const ticketsPerDay = delta / totalDays;
+          const revenuePerDay = revenueDelta > 0 ? revenueDelta / totalDays : 0;
 
           for (let j = 0; j < totalDays; j++) {
             const date = addDays(previousDate!, j);
@@ -295,6 +304,7 @@ async function getDashboardData() {
               date,
               projectId,
               tickets: Math.round(ticketsPerDay),
+              revenue: Math.round(revenuePerDay),
               isEstimated: !isLastDay,
             });
           }
@@ -302,12 +312,13 @@ async function getDashboardData() {
       }
 
       previousTotal = ticket.quantity_sold;
+      previousRevenue = Number(ticket.revenue);
       previousDate = ticketDate;
     }
   }
 
   // Aggregate distributed data by date and project, separating actual vs estimated
-  const ticketsByDateAndProject: Record<string, Record<string, { actual: number; estimated: number }>> = {};
+  const ticketsByDateAndProject: Record<string, Record<string, { actual: number; estimated: number; actualRevenue: number }>> = {};
 
   // Initialize all 14 days
   for (let i = 0; i < 14; i++) {
@@ -316,7 +327,7 @@ async function getDashboardData() {
     const dateStr = date.toISOString().split('T')[0];
     ticketsByDateAndProject[dateStr] = {};
     for (const project of projectsWithStats) {
-      ticketsByDateAndProject[dateStr][project.id] = { actual: 0, estimated: 0 };
+      ticketsByDateAndProject[dateStr][project.id] = { actual: 0, estimated: 0, actualRevenue: 0 };
     }
   }
 
@@ -327,6 +338,7 @@ async function getDashboardData() {
         ticketsByDateAndProject[item.date][item.projectId].estimated += item.tickets;
       } else {
         ticketsByDateAndProject[item.date][item.projectId].actual += item.tickets;
+        ticketsByDateAndProject[item.date][item.projectId].actualRevenue += item.revenue;
       }
     }
   }
@@ -352,13 +364,15 @@ async function getDashboardData() {
     ? Object.values(yesterdayData).reduce((sum, val) => sum + val.actual + val.estimated, 0)
     : 0;
 
-  // Calculate last 7 days tickets (actual + estimated)
+  // Calculate last 7 days tickets (actual + estimated) and actual revenue
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   let ticketsLast7Days = 0;
+  let revenueWeekActual = 0;
   for (const [dateStr, projectData] of Object.entries(ticketsByDateAndProject)) {
     if (dateStr >= sevenDaysAgo.toISOString().split('T')[0]) {
       ticketsLast7Days += Object.values(projectData).reduce((sum, val) => sum + val.actual + val.estimated, 0);
+      revenueWeekActual += Object.values(projectData).reduce((sum, val) => sum + val.actualRevenue, 0);
     }
   }
 
@@ -367,7 +381,7 @@ async function getDashboardData() {
     stats: {
       ticketsToday: ticketsYesterday,
       ticketsWeek: ticketsLast7Days,
-      revenueWeek: totalRevenueWeek,
+      revenueWeek: revenueWeekActual,
       activeProjects,
     },
     chartData,
