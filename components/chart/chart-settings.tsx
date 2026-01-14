@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Settings2, ChevronDown } from "lucide-react";
+import { Settings2, ChevronDown, Search } from "lucide-react";
 import { DateRangePicker } from "./date-range-picker";
 import type {
   DateRangeType,
@@ -82,6 +84,9 @@ export function ChartSettings({
   hideMetricSelector,
   hideEntityFilter,
 }: ChartSettingsProps) {
+  // Search state for entity filter
+  const [entitySearch, setEntitySearch] = useState("");
+
   const handleDateRangePreset = (preset: DateRangeType) => {
     if (preset === 'custom') {
       // Keep current custom dates if they exist, otherwise use defaults
@@ -189,70 +194,137 @@ export function ChartSettings({
 
       {/* Entity Filter */}
       {!hideEntityFilter && entities.length > 0 && (
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={(open) => !open && setEntitySearch("")}>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="h-8 text-xs">
               {getEntityFilterLabel()}
               <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            <DropdownMenuCheckboxItem
-              checked={isAllSelected}
-              onCheckedChange={() => toggleEntity('all')}
-            >
-              {entities.some(e => e.type === 'project') ? 'Alle turneer' :
-               entities.some(e => e.type === 'stop') ? 'Alle stopp' : 'Alle'}
-            </DropdownMenuCheckboxItem>
+          <DropdownMenuContent align="start" className="w-72">
+            {/* Search Input */}
+            <div className="px-2 py-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <Input
+                  placeholder="Søk etter stopp eller show..."
+                  value={entitySearch}
+                  onChange={(e) => setEntitySearch(e.target.value)}
+                  className="h-8 pl-8 text-xs"
+                  onKeyDown={(e) => e.stopPropagation()}
+                />
+              </div>
+            </div>
             <DropdownMenuSeparator />
 
-            {/* Projects */}
-            {groupedEntities.project?.map((entity) => (
-              <DropdownMenuCheckboxItem
-                key={entity.id}
-                checked={!isAllSelected && selectedEntities.includes(entity.id)}
-                onCheckedChange={() => toggleEntity(entity.id)}
-              >
-                {entity.name}
-              </DropdownMenuCheckboxItem>
-            ))}
-
-            {/* Stops (with optional show children) */}
-            {groupedEntities.stop?.map((stop) => {
-              const showsForStop = groupedEntities.show?.filter(s => s.parentId === stop.id) || [];
-              return (
-                <div key={stop.id}>
+            <div className="max-h-[300px] overflow-y-auto">
+              {/* "All" option - only show if no search or search matches */}
+              {!entitySearch && (
+                <>
                   <DropdownMenuCheckboxItem
-                    checked={!isAllSelected && selectedEntities.includes(stop.id)}
-                    onCheckedChange={() => toggleEntity(stop.id)}
-                    className="font-medium"
+                    checked={isAllSelected}
+                    onCheckedChange={() => toggleEntity('all')}
                   >
-                    {stop.name}
+                    {entities.some(e => e.type === 'project') ? 'Alle turneer' :
+                     entities.some(e => e.type === 'stop') ? 'Alle stopp' : 'Alle'}
                   </DropdownMenuCheckboxItem>
-                  {showsForStop.map((show) => (
-                    <DropdownMenuCheckboxItem
-                      key={show.id}
-                      checked={!isAllSelected && selectedEntities.includes(show.id)}
-                      onCheckedChange={() => toggleEntity(show.id)}
-                      className="pl-6 text-gray-600"
-                    >
-                      {show.name}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </div>
-              );
-            })}
+                  <DropdownMenuSeparator />
+                </>
+              )}
 
-            {/* Shows without parent (shouldn't happen but handle it) */}
-            {groupedEntities.show?.filter(s => !s.parentId).map((entity) => (
-              <DropdownMenuCheckboxItem
-                key={entity.id}
-                checked={!isAllSelected && selectedEntities.includes(entity.id)}
-                onCheckedChange={() => toggleEntity(entity.id)}
-              >
-                {entity.name}
-              </DropdownMenuCheckboxItem>
-            ))}
+              {/* Projects */}
+              {groupedEntities.project?.filter(entity =>
+                entity.name.toLowerCase().includes(entitySearch.toLowerCase())
+              ).map((entity) => (
+                <DropdownMenuCheckboxItem
+                  key={entity.id}
+                  checked={!isAllSelected && selectedEntities.includes(entity.id)}
+                  onCheckedChange={() => toggleEntity(entity.id)}
+                >
+                  {entity.name}
+                </DropdownMenuCheckboxItem>
+              ))}
+
+              {/* Stops (with optional show children) */}
+              {groupedEntities.stop?.map((stop) => {
+                const showsForStop = groupedEntities.show?.filter(s => s.parentId === stop.id) || [];
+                const searchLower = entitySearch.toLowerCase();
+
+                // Check if stop or any of its shows match the search
+                const stopMatches = stop.name.toLowerCase().includes(searchLower);
+                const matchingShows = showsForStop.filter(show =>
+                  show.name.toLowerCase().includes(searchLower)
+                );
+
+                // Skip this stop entirely if nothing matches
+                if (entitySearch && !stopMatches && matchingShows.length === 0) {
+                  return null;
+                }
+
+                // Determine which shows to display
+                const showsToDisplay = entitySearch
+                  ? (stopMatches ? showsForStop : matchingShows)
+                  : showsForStop;
+
+                return (
+                  <div key={stop.id}>
+                    <DropdownMenuCheckboxItem
+                      checked={!isAllSelected && selectedEntities.includes(stop.id)}
+                      onCheckedChange={() => toggleEntity(stop.id)}
+                      className="font-medium"
+                    >
+                      {stop.name}
+                    </DropdownMenuCheckboxItem>
+                    {showsToDisplay.map((show) => (
+                      <DropdownMenuCheckboxItem
+                        key={show.id}
+                        checked={!isAllSelected && selectedEntities.includes(show.id)}
+                        onCheckedChange={() => toggleEntity(show.id)}
+                        className="pl-6 text-gray-600"
+                      >
+                        {show.name}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </div>
+                );
+              })}
+
+              {/* Shows without parent (shouldn't happen but handle it) */}
+              {groupedEntities.show?.filter(s => !s.parentId).filter(entity =>
+                entity.name.toLowerCase().includes(entitySearch.toLowerCase())
+              ).map((entity) => (
+                <DropdownMenuCheckboxItem
+                  key={entity.id}
+                  checked={!isAllSelected && selectedEntities.includes(entity.id)}
+                  onCheckedChange={() => toggleEntity(entity.id)}
+                >
+                  {entity.name}
+                </DropdownMenuCheckboxItem>
+              ))}
+
+              {/* No results message */}
+              {entitySearch && (() => {
+                const searchLower = entitySearch.toLowerCase();
+                const hasProjects = groupedEntities.project?.some(e => e.name.toLowerCase().includes(searchLower));
+                const hasStops = groupedEntities.stop?.some(stop => {
+                  const showsForStop = groupedEntities.show?.filter(s => s.parentId === stop.id) || [];
+                  return stop.name.toLowerCase().includes(searchLower) ||
+                         showsForStop.some(show => show.name.toLowerCase().includes(searchLower));
+                });
+                const hasOrphanShows = groupedEntities.show?.filter(s => !s.parentId).some(e =>
+                  e.name.toLowerCase().includes(searchLower)
+                );
+
+                if (!hasProjects && !hasStops && !hasOrphanShows) {
+                  return (
+                    <div className="px-2 py-4 text-center text-xs text-gray-500">
+                      Ingen treff for &quot;{entitySearch}&quot;
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
       )}
