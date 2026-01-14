@@ -148,11 +148,14 @@ async function getDashboardData() {
   const totalRevenueWeek = projectsWithStats.reduce((sum, p) => sum + p.revenue, 0);
 
   // Calculate daily deltas for chart (all in memory)
+  // Skip the first report for each show - we only want to show actual daily changes,
+  // not the initial baseline (which would show all tickets as sold on day 1)
   const dailyDeltasByShowAndDate: Record<string, Record<string, number>> = {};
 
   for (const showId of allShowIds) {
     const tickets = ticketsByShow[showId];
-    if (tickets && tickets.length > 0) {
+    // Need at least 2 reports to calculate meaningful deltas
+    if (tickets && tickets.length > 1) {
       // Sort ascending for delta calculation
       const sortedTickets = [...tickets].sort((a, b) => {
         const dateA = a.sale_date || a.reported_at?.split('T')[0] || '';
@@ -160,8 +163,10 @@ async function getDashboardData() {
         return dateA.localeCompare(dateB);
       });
 
-      let previousTotal = 0;
-      for (const snapshot of sortedTickets) {
+      // Start from the second report, using the first as the baseline
+      let previousTotal = sortedTickets[0].quantity_sold;
+      for (let i = 1; i < sortedTickets.length; i++) {
+        const snapshot = sortedTickets[i];
         const dateStr = snapshot.sale_date || snapshot.reported_at?.split('T')[0];
         if (dateStr) {
           const delta = snapshot.quantity_sold - previousTotal;
