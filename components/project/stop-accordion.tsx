@@ -98,6 +98,11 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
   const [editSource, setEditSource] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Edit show state
+  const [isEditShowDialogOpen, setIsEditShowDialogOpen] = useState(false);
+  const [editingShow, setEditingShow] = useState<Show | null>(null);
+  const [editSalesStartDate, setEditSalesStartDate] = useState("");
+
   const totalTicketsSold = stop.shows.reduce((sum, s) => sum + s.tickets_sold, 0);
   const totalCapacity = stop.shows.reduce((sum, s) => sum + (s.capacity || 0), 0);
   const fillRate = totalCapacity > 0 ? Math.round((totalTicketsSold / totalCapacity) * 100) : 0;
@@ -597,6 +602,37 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     setEditSource(ticket.source || "");
   }
 
+  function openEditShowDialog(show: Show) {
+    setEditingShow(show);
+    setEditSalesStartDate(show.sales_start_date || "");
+    setIsEditShowDialogOpen(true);
+  }
+
+  async function handleSaveShow(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingShow) return;
+
+    setSaving(true);
+
+    const supabase = createClient();
+    await supabase
+      .from("shows")
+      .update({
+        sales_start_date: editSalesStartDate || null,
+      })
+      .eq("id", editingShow.id);
+
+    setIsEditShowDialogOpen(false);
+    setEditingShow(null);
+
+    // Clear chart data to force reload with new sales_start_date
+    setStopChartData([]);
+    setShowChartData({});
+
+    onDataChange();
+    setSaving(false);
+  }
+
   return (
     <div className="bg-white rounded-lg border border-gray-200">
       {/* Header - clickable */}
@@ -723,6 +759,10 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                           <DropdownMenuItem onClick={() => openReportsDialog(show)}>
                             <FileText className="mr-2 h-4 w-4" />
                             Se rapporter
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openEditShowDialog(show)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Rediger show
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
@@ -896,6 +936,42 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                 Avbryt
               </Button>
               <Button type="submit" disabled={saving || !editQuantity || !editRevenue}>
+                {saving ? "Lagrer..." : "Lagre endringer"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Show Dialog */}
+      <Dialog open={isEditShowDialogOpen} onOpenChange={setIsEditShowDialogOpen}>
+        <DialogContent>
+          <form onSubmit={handleSaveShow}>
+            <DialogHeader>
+              <DialogTitle>Rediger show</DialogTitle>
+              <DialogDescription>
+                {editingShow && (editingShow.name || `${formatDate(editingShow.date)} ${stop.name}`)}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="sales_start_date">Salgsstart</Label>
+                <Input
+                  id="sales_start_date"
+                  type="date"
+                  value={editSalesStartDate}
+                  onChange={(e) => setEditSalesStartDate(e.target.value)}
+                />
+                <p className="text-xs text-gray-500">
+                  Brukes til å estimere daglig salg i grafene. Overstyres av API hvis en ny verdi sendes.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsEditShowDialogOpen(false)}>
+                Avbryt
+              </Button>
+              <Button type="submit" disabled={saving}>
                 {saving ? "Lagrer..." : "Lagre endringer"}
               </Button>
             </DialogFooter>
