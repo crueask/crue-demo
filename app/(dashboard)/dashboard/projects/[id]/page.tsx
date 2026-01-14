@@ -273,10 +273,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       </Link>
 
       {/* Header */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <div className="flex items-start justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
-          <div className="flex items-center gap-2">
+      <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{project.name}</h1>
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
@@ -307,23 +307,23 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-8 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-8 mb-6">
           <div>
             <p className="text-sm text-gray-500">Antall show</p>
-            <p className="text-3xl font-semibold text-gray-900">{totalShows}</p>
+            <p className="text-2xl sm:text-3xl font-semibold text-gray-900">{totalShows}</p>
           </div>
           <div>
             <p className="text-sm text-gray-500">Billetter solgt</p>
-            <p className="text-3xl font-semibold text-gray-900">
+            <p className="text-2xl sm:text-3xl font-semibold text-gray-900">
               {formatNumber(totalTicketsSold)}
               {totalCapacity > 0 && (
-                <span className="text-lg text-gray-400"> / {formatNumber(totalCapacity)}</span>
+                <span className="text-sm sm:text-lg text-gray-400"> / {formatNumber(totalCapacity)}</span>
               )}
             </p>
           </div>
-          <div>
+          <div className="col-span-2 sm:col-span-1">
             <p className="text-sm text-gray-500">Omsetning</p>
-            <p className="text-3xl font-semibold text-blue-600">{formatCurrency(totalRevenue)}</p>
+            <p className="text-2xl sm:text-3xl font-semibold text-blue-600">{formatCurrency(totalRevenue)}</p>
           </div>
         </div>
 
