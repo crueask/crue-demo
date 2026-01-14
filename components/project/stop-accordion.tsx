@@ -143,6 +143,40 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     return `kl. ${timeStr.slice(0, 5)}`;
   };
 
+  // Format a short date (day + month)
+  const formatShortDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("nb-NO", {
+      day: "numeric",
+      month: "short",
+    }).replace(".", "");
+  };
+
+  // Get date range string for the stop's shows
+  const getDateRangeLabel = () => {
+    if (stop.shows.length === 0) return "";
+
+    const sortedShows = [...stop.shows].sort((a, b) => a.date.localeCompare(b.date));
+    const firstDate = sortedShows[0].date;
+    const lastDate = sortedShows[sortedShows.length - 1].date;
+
+    if (firstDate === lastDate) {
+      return formatShortDate(firstDate);
+    }
+
+    const firstDateObj = new Date(firstDate);
+    const lastDateObj = new Date(lastDate);
+
+    // Same month - show "15-20. jan"
+    if (firstDateObj.getMonth() === lastDateObj.getMonth() && firstDateObj.getFullYear() === lastDateObj.getFullYear()) {
+      const month = lastDateObj.toLocaleDateString("nb-NO", { month: "short" }).replace(".", "");
+      return `${firstDateObj.getDate()}-${lastDateObj.getDate()}. ${month}`;
+    }
+
+    // Different months - show "15. jan - 20. feb"
+    return `${formatShortDate(firstDate)} - ${formatShortDate(lastDate)}`;
+  };
+
   // Helper functions for date calculations
   const daysBetween = (start: string, end: string): number => {
     const startDate = new Date(start);
@@ -642,7 +676,12 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
       >
         <div className="flex-1">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-medium text-gray-900">{stop.name}</h3>
+            <h3 className="font-medium text-gray-900">
+              {stop.shows.length > 0 && (
+                <span className="text-gray-500 font-normal">{getDateRangeLabel()} – </span>
+              )}
+              {stop.name}
+            </h3>
             <span className="text-sm text-gray-500">{fillRate}%</span>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-500 mb-2">
