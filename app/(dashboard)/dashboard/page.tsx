@@ -209,15 +209,9 @@ async function getDashboardData() {
             isEstimated: !isLastDay, // Only the actual report day is not estimated
           });
         }
-      } else {
-        // No sales_start_date or it's >= report date - show all on report day as actual
-        distributedData.push({
-          date: ticketDate,
-          projectId,
-          tickets: ticket.quantity_sold,
-          isEstimated: false,
-        });
       }
+      // If no sales_start_date (or it's >= report date) with only 1 report,
+      // skip this show - we can't calculate meaningful daily changes without a baseline
       continue;
     }
 

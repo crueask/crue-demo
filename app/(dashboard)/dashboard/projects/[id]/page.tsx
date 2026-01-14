@@ -26,6 +26,7 @@ import { ArrowLeft, MoreHorizontal, Pencil, Trash2, Share } from "lucide-react";
 import { StopAccordion } from "@/components/project/stop-accordion";
 import { ShareDialog } from "@/components/project/share-dialog";
 import { TicketsChart } from "@/components/project/tickets-chart";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 interface Project {
   id: string;
@@ -269,14 +270,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   };
 
   if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-4" />
-          <div className="h-4 bg-gray-200 rounded w-1/2" />
-        </div>
-      </div>
-    );
+    return <LoadingSpinner />;
   }
 
   if (!project) {
