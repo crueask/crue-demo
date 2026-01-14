@@ -10,6 +10,7 @@ import {
   type DistributionWeight,
   type ChartPreferences,
   type ChartDataPoint,
+  type CumulativeBaseline,
   loadChartPreferences,
   saveChartPreferences,
   defaultChartPreferences,
@@ -298,7 +299,25 @@ export function ProjectChartSection({ stops }: ProjectChartSectionProps) {
       const filteredEntityIds = selectedEntities.includes('all') || selectedEntities.length === 0
         ? entityIds
         : selectedEntities;
-      formattedData = toCumulative(formattedData, filteredEntityIds);
+
+      // Calculate baseline totals from data BEFORE the visible date range
+      const baselines: CumulativeBaseline = {};
+      for (const entityId of filteredEntityIds) {
+        baselines[entityId] = { actual: 0, estimated: 0 };
+      }
+
+      for (const item of distributedData) {
+        // Only count items before the visible start date
+        if (item.date < startDate && filteredEntityIds.includes(item.entityId)) {
+          if (item.isEstimated) {
+            baselines[item.entityId].estimated += item.value;
+          } else {
+            baselines[item.entityId].actual += item.value;
+          }
+        }
+      }
+
+      formattedData = toCumulative(formattedData, filteredEntityIds, baselines);
     }
 
     // Remove estimations if disabled

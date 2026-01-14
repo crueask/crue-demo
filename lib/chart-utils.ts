@@ -144,15 +144,33 @@ export function distributeValues(
 }
 
 /**
+ * Baseline values for cumulative calculations (totals before visible date range)
+ */
+export interface CumulativeBaseline {
+  [entityId: string]: { actual: number; estimated: number };
+}
+
+/**
  * Convert daily data to cumulative
+ * @param dailyData - Daily chart data points
+ * @param entityIds - List of entity IDs to process
+ * @param baselines - Optional baseline totals from before the visible date range
  */
 export function toCumulative(
   dailyData: ChartDataPoint[],
-  entityIds: string[]
+  entityIds: string[],
+  baselines?: CumulativeBaseline
 ): ChartDataPoint[] {
   const cumulative: ChartDataPoint[] = [];
   const runningTotals: Record<string, number> = {};
   const runningEstimated: Record<string, number> = {};
+
+  // Initialize with baselines if provided
+  for (const entityId of entityIds) {
+    const baseline = baselines?.[entityId];
+    runningTotals[entityId] = baseline ? baseline.actual + baseline.estimated : 0;
+    runningEstimated[entityId] = baseline?.estimated || 0;
+  }
 
   for (const day of dailyData) {
     const point: ChartDataPoint = { date: day.date };
