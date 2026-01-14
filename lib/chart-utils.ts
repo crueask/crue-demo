@@ -96,13 +96,19 @@ export function distributeValues(
   weight: DistributionWeight
 ): number[] {
   if (days <= 0) return [];
-  if (days === 1) return [delta];
+  if (days === 1) return [Math.max(0, delta)];
+  if (delta <= 0) return Array(days).fill(0);
 
   if (weight === 'even') {
-    const perDay = delta / days;
-    return Array(days).fill(0).map((_, i) =>
-      i === days - 1 ? delta - Math.round(perDay) * (days - 1) : Math.round(perDay)
-    );
+    // Use floor to avoid over-allocation, then distribute remainder
+    const perDay = Math.floor(delta / days);
+    const remainder = delta - perDay * days;
+
+    return Array(days).fill(0).map((_, i) => {
+      // Distribute remainder to later days (more realistic - sales often pick up)
+      const extra = i >= days - remainder ? 1 : 0;
+      return perDay + extra;
+    });
   }
 
   // Weighted uses triangular distribution
@@ -111,12 +117,27 @@ export function distributeValues(
     : Array.from({ length: days }, (_, i) => i + 1);
 
   const totalWeight = weights.reduce((a, b) => a + b, 0);
-  const distributed = weights.map(w => Math.round(delta * w / totalWeight));
 
-  // Adjust for rounding errors - add/subtract from last day
+  // Use floor to avoid over-allocation
+  const distributed = weights.map(w => Math.floor(delta * w / totalWeight));
+
+  // Distribute remainder across days proportionally (add 1 to highest-weighted days first)
   const sum = distributed.reduce((a, b) => a + b, 0);
-  if (sum !== delta) {
-    distributed[distributed.length - 1] += delta - sum;
+  let remainder = delta - sum;
+
+  if (remainder > 0) {
+    // Get indices sorted by weight (descending)
+    const sortedIndices = weights
+      .map((w, i) => ({ weight: w, index: i }))
+      .sort((a, b) => b.weight - a.weight)
+      .map(item => item.index);
+
+    // Add 1 to each day until remainder is distributed
+    for (const idx of sortedIndices) {
+      if (remainder <= 0) break;
+      distributed[idx] += 1;
+      remainder -= 1;
+    }
   }
 
   return distributed;
