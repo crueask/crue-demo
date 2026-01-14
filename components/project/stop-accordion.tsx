@@ -245,7 +245,8 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
             isEstimated: false,
           });
         } else {
-          const totalDays = daysBetween(previousDate, ticketDate) + 1;
+          // previousDate is guaranteed non-null here due to canDistribute check
+          const totalDays = daysBetween(previousDate!, ticketDate) + 1;
 
           if (totalDays <= 1) {
             distributedData.push({
@@ -258,7 +259,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
             const ticketsPerDay = delta / totalDays;
 
             for (let j = 0; j < totalDays; j++) {
-              const date = addDays(previousDate, j);
+              const date = addDays(previousDate!, j);
               const isLastDay = j === totalDays - 1;
               distributedData.push({
                 date,
@@ -394,7 +395,8 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
               isEstimated: false,
             });
           } else {
-            const totalDays = daysBetween(previousDate, ticketDate) + 1;
+            // previousDate is guaranteed non-null here due to canDistribute check
+            const totalDays = daysBetween(previousDate!, ticketDate) + 1;
 
             if (totalDays <= 1) {
               distributedData.push({
@@ -406,7 +408,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
               const ticketsPerDay = delta / totalDays;
 
               for (let j = 0; j < totalDays; j++) {
-                const date = addDays(previousDate, j);
+                const date = addDays(previousDate!, j);
                 const isLastDay = j === totalDays - 1;
                 distributedData.push({
                   date,
