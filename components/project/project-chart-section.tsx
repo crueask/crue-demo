@@ -134,6 +134,25 @@ export function ProjectChartSection({ stops }: ProjectChartSectionProps) {
 
     const distributedData: DistributedItem[] = [];
 
+    // Build a set of report dates per entity (for marking actual vs estimated)
+    const reportDatesByEntity: Record<string, Set<string>> = {};
+    for (const stop of stops) {
+      for (const show of stop.shows) {
+        const tickets = ticketsByShow[show.id];
+        if (!tickets) continue;
+        const entityId = filteringToShows ? show.id : stop.id;
+        if (!reportDatesByEntity[entityId]) {
+          reportDatesByEntity[entityId] = new Set();
+        }
+        for (const ticket of tickets) {
+          const effectiveDate = getEffectiveSalesDate(ticket as TicketRow);
+          if (effectiveDate) {
+            reportDatesByEntity[entityId].add(effectiveDate);
+          }
+        }
+      }
+    }
+
     for (const stop of stops) {
       for (const show of stop.shows) {
         const tickets = ticketsByShow[show.id];
@@ -163,12 +182,11 @@ export function ProjectChartSection({ stops }: ProjectChartSectionProps) {
 
             for (let i = 0; i < totalDays; i++) {
               const date = addDays(salesStartDate, i);
-              const isLastDay = i === totalDays - 1;
               distributedData.push({
                 date,
                 entityId,
                 value: distributed[i],
-                isEstimated: !isLastDay,
+                isEstimated: !reportDatesByEntity[entityId]?.has(date),
               });
             }
           }
@@ -225,12 +243,11 @@ export function ProjectChartSection({ stops }: ProjectChartSectionProps) {
 
               for (let j = 0; j < totalDays; j++) {
                 const date = addDays(previousDate!, j);
-                const isLastDay = j === totalDays - 1;
                 distributedData.push({
                   date,
                   entityId,
                   value: distributed[j],
-                  isEstimated: !isLastDay,
+                  isEstimated: !reportDatesByEntity[entityId]?.has(date),
                 });
               }
             }
