@@ -6,11 +6,13 @@ import {
   ChartTooltip,
 } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ReferenceLine } from "recharts";
+import { type MissingStop } from "@/lib/chart-utils";
 
 interface TicketsChartProps {
   data: Array<{
     date: string;
-    [key: string]: string | number;
+    _missingStops?: MissingStop[];
+    [key: string]: string | number | MissingStop[] | undefined;
   }>;
   entities: Array<{
     id: string;
@@ -36,7 +38,7 @@ const ENTITY_COLORS = [
 ];
 
 // Check if there's any estimated data in the dataset
-function hasEstimatedData(data: Array<{ [key: string]: string | number }>, entities: Array<{ id: string }>): boolean {
+function hasEstimatedData(data: Array<{ [key: string]: string | number | MissingStop[] | undefined }>, entities: Array<{ id: string }>): boolean {
   return data.some(day =>
     entities.some(entity => {
       const estimated = day[`${entity.id}_estimated`];
@@ -166,6 +168,10 @@ export function TicketsChart({
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
 
+              // Get missing stops from the data point
+              const dataPoint = payload[0]?.payload as { _missingStops?: MissingStop[] } | undefined;
+              const missingStops = dataPoint?._missingStops || [];
+
               // Group data by entity (combining actual + estimated)
               const entityData: Record<string, { actual: number; estimated: number; color: string; name: string }> = {};
 
@@ -230,6 +236,21 @@ export function TicketsChart({
                       );
                     })}
                   </div>
+                  {/* Missing reports section */}
+                  {missingStops.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-gray-100">
+                      <p className="text-xs text-gray-400 mb-1.5">Venter på rapport</p>
+                      <div className="space-y-1">
+                        {missingStops.map((stop) => (
+                          <div key={stop.stopId} className="flex items-center gap-2 text-xs text-gray-400">
+                            <div className="w-2 h-2 rounded-full border border-gray-300 flex-shrink-0" />
+                            <span>{stop.stopName}</span>
+                            <span className="text-gray-300">({formatDate(stop.showDate)})</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             }}

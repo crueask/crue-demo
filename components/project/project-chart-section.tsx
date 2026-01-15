@@ -11,6 +11,7 @@ import {
   type ChartPreferences,
   type ChartDataPoint,
   type CumulativeBaseline,
+  type MissingStop,
   loadChartPreferences,
   saveChartPreferences,
   defaultChartPreferences,
@@ -278,7 +279,7 @@ export function ProjectChartSection({ stops }: ProjectChartSectionProps) {
       }
     }
 
-    // Convert to chart format
+    // Convert to chart format with missing stops calculation
     let formattedData: ChartDataPoint[] = Object.entries(chartDataByDate)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, entityData]) => {
@@ -287,6 +288,42 @@ export function ProjectChartSection({ stops }: ProjectChartSectionProps) {
           dataPoint[entityId] = values.actual;
           dataPoint[`${entityId}_estimated`] = values.estimated;
         }
+
+        // Calculate missing stops for this date
+        const missingStops: MissingStop[] = [];
+        for (const stop of stops) {
+          // Find upcoming shows for this stop that have sales started
+          const upcomingShowsWithSalesStarted = stop.shows.filter(show =>
+            show.date > date &&
+            show.sales_start_date &&
+            show.sales_start_date <= date
+          );
+
+          if (upcomingShowsWithSalesStarted.length === 0) continue;
+
+          // Check if stop has any data for this date
+          const entityId = filteringToShows
+            ? upcomingShowsWithSalesStarted[0].id
+            : stop.id;
+          const hasData = entityData[entityId]?.actual > 0 ||
+                          entityData[entityId]?.estimated > 0;
+
+          if (!hasData) {
+            // Get the earliest upcoming show
+            const nextShow = upcomingShowsWithSalesStarted
+              .sort((a, b) => a.date.localeCompare(b.date))[0];
+            missingStops.push({
+              stopId: stop.id,
+              stopName: stop.name,
+              showDate: nextShow.date,
+            });
+          }
+        }
+
+        if (missingStops.length > 0) {
+          dataPoint._missingStops = missingStops;
+        }
+
         return dataPoint;
       });
 

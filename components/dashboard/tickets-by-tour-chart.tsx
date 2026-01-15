@@ -10,7 +10,7 @@ import { Bar, BarChart, Area, AreaChart, CartesianGrid, XAxis, YAxis, ReferenceL
 interface TicketsByTourChartProps {
   data: Array<{
     date: string;
-    [projectName: string]: string | number;
+    [projectName: string]: string | number | unknown[] | undefined;
   }>;
   projects: Array<{
     id: string;
@@ -35,7 +35,7 @@ const PROJECT_COLORS = [
 ];
 
 // Check if there's any estimated data in the dataset
-function hasEstimatedData(data: Array<{ [key: string]: string | number }>, projects: Array<{ id: string }>): boolean {
+function hasEstimatedData(data: Array<{ [key: string]: string | number | unknown[] | undefined }>, projects: Array<{ id: string }>): boolean {
   return data.some(day =>
     projects.some(project => {
       const estimated = day[`${project.id}_estimated`];

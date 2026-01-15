@@ -4,9 +4,16 @@ export type DistributionWeight = 'even' | 'early' | 'late';
 export type MetricType = 'tickets_daily' | 'revenue_daily' | 'tickets_cumulative' | 'revenue_cumulative';
 export type DateRangeType = '7d' | '14d' | '28d' | 'custom';
 
+export interface MissingStop {
+  stopId: string;
+  stopName: string;
+  showDate: string;
+}
+
 export interface ChartDataPoint {
   date: string;
-  [key: string]: string | number;
+  _missingStops?: MissingStop[];
+  [key: string]: string | number | MissingStop[] | undefined;
 }
 
 export interface ChartPreferences {
