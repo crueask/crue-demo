@@ -204,11 +204,21 @@ export function TicketsChart({
                 .map(([id, data]) => ({ id, ...data, total: data.actual + data.estimated }))
                 .sort((a, b) => b.total - a.total);
 
+              // Calculate grand total
+              const grandTotal = sortedEntityData.reduce((sum, data) => sum + data.total, 0);
+
               return (
                 <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 min-w-[180px]">
-                  <p className="text-sm font-medium text-gray-900 mb-2 border-b border-gray-100 pb-2">
-                    {formatDate(label)}
-                  </p>
+                  <div className="flex items-center justify-between mb-2 border-b border-gray-100 pb-2">
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatDate(label)}
+                    </p>
+                    {grandTotal > 0 && (
+                      <span className="text-sm font-semibold text-gray-900">
+                        {formatTooltipValue(grandTotal)}
+                      </span>
+                    )}
+                  </div>
                   <div className="space-y-1.5">
                     {sortedEntityData.map((data) => {
                       if (data.total === 0) return null;
