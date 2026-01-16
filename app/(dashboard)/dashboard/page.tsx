@@ -190,10 +190,18 @@ async function getDashboardData() {
 
   const distributedData: DistributedTicket[] = [];
 
+  // Build a set of report dates per project (for marking actual vs estimated)
+  const reportDatesByProject: Record<string, Set<string>> = {};
+
   for (const showId of allShowIds) {
     const tickets = ticketsByShow[showId];
     const projectId = showToProject[showId];
     if (!tickets || tickets.length === 0 || !projectId) continue;
+
+    // Initialize report dates set for this project if needed
+    if (!reportDatesByProject[projectId]) {
+      reportDatesByProject[projectId] = new Set();
+    }
 
     const salesStartDate = showInfoMap[showId]?.sales_start_date;
 
@@ -215,6 +223,14 @@ async function getDashboardData() {
       return dateA.localeCompare(dateB);
     });
 
+    // Collect all report dates for this project
+    for (const ticket of sortedTickets) {
+      const effectiveDate = getEffectiveSalesDate(ticket);
+      if (effectiveDate) {
+        reportDatesByProject[projectId].add(effectiveDate);
+      }
+    }
+
     // Handle single report case
     if (sortedTickets.length === 1) {
       const ticket = sortedTickets[0];
@@ -229,13 +245,12 @@ async function getDashboardData() {
 
         for (let i = 0; i < totalDays; i++) {
           const date = addDays(salesStartDate, i);
-          const isLastDay = i === totalDays - 1;
           distributedData.push({
             date,
             projectId,
             tickets: Math.round(ticketsPerDay),
             revenue: Math.round(revenuePerDay),
-            isEstimated: !isLastDay, // Only the actual report day is not estimated
+            isEstimated: !reportDatesByProject[projectId]?.has(date),
           });
         }
       }
@@ -315,13 +330,12 @@ async function getDashboardData() {
 
           for (let j = 0; j < totalDays; j++) {
             const date = addDays(distributionStartDate, j);
-            const isLastDay = j === totalDays - 1;
             distributedData.push({
               date,
               projectId,
               tickets: Math.round(ticketsPerDay),
               revenue: Math.round(revenuePerDay),
-              isEstimated: !isLastDay,
+              isEstimated: !reportDatesByProject[projectId]?.has(date),
             });
           }
         }
