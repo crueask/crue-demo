@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DashboardChartSection } from "@/components/dashboard/dashboard-chart-section";
 import { ProjectGrid } from "@/components/dashboard/project-grid";
+import { distributeValues, addDays, daysBetween } from "@/lib/chart-utils";
 
 interface ProjectWithStats {
   id: string;
@@ -88,8 +89,8 @@ async function getDashboardData() {
         .from("tickets")
         .select("show_id, quantity_sold, revenue, sale_date, reported_at")
         .in("show_id", allShowIds)
-        .order("sale_date", { ascending: false, nullsFirst: false })
-        .order("reported_at", { ascending: false })
+        .order("sale_date", { ascending: true, nullsFirst: false })
+        .order("reported_at", { ascending: true })
     : { data: [] };
 
   // Group tickets by show_id
@@ -164,20 +165,6 @@ async function getDashboardData() {
 
   const activeProjects = projects.filter(p => p.status === "active").length;
 
-  // Helper to calculate days between two dates
-  const daysBetween = (start: string, end: string): number => {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    return Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  };
-
-  // Helper to add days to a date string
-  const addDays = (dateStr: string, days: number): string => {
-    const date = new Date(dateStr);
-    date.setDate(date.getDate() + days);
-    return date.toISOString().split('T')[0];
-  };
-
   // Calculate distributed ticket data for chart
   // Distributes sales linearly across gaps between reports
   interface DistributedTicket {
@@ -240,16 +227,16 @@ async function getDashboardData() {
       // If sales_start_date exists and is before the report date, distribute
       if (salesStartDate && salesStartDate < ticketDate) {
         const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
-        const ticketsPerDay = ticket.quantity_sold / totalDays;
-        const revenuePerDay = Number(ticket.revenue) / totalDays;
+        const distributedTickets = distributeValues(ticket.quantity_sold, totalDays, 'even');
+        const distributedRevenue = distributeValues(Number(ticket.revenue), totalDays, 'even');
 
         for (let i = 0; i < totalDays; i++) {
           const date = addDays(salesStartDate, i);
           distributedData.push({
             date,
             projectId,
-            tickets: Math.round(ticketsPerDay),
-            revenue: Math.round(revenuePerDay),
+            tickets: distributedTickets[i],
+            revenue: distributedRevenue[i],
             isEstimated: !reportDatesByProject[projectId]?.has(date),
           });
         }
@@ -324,17 +311,17 @@ async function getDashboardData() {
             isEstimated: false,
           });
         } else {
-          // Distribute linearly across days
-          const ticketsPerDay = delta / totalDays;
-          const revenuePerDay = revenueDelta > 0 ? revenueDelta / totalDays : 0;
+          // Distribute linearly across days using distributeValues for proper handling
+          const distributedTickets = distributeValues(delta, totalDays, 'even');
+          const distributedRevenue = distributeValues(revenueDelta > 0 ? revenueDelta : 0, totalDays, 'even');
 
           for (let j = 0; j < totalDays; j++) {
             const date = addDays(distributionStartDate, j);
             distributedData.push({
               date,
               projectId,
-              tickets: Math.round(ticketsPerDay),
-              revenue: Math.round(revenuePerDay),
+              tickets: distributedTickets[j],
+              revenue: distributedRevenue[j],
               isEstimated: !reportDatesByProject[projectId]?.has(date),
             });
           }
