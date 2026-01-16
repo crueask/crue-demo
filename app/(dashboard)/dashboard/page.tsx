@@ -250,6 +250,7 @@ async function getDashboardData() {
     let previousTotal = 0;
     let previousRevenue = 0;
     let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
+    let previousDateIsSalesStart = !!salesStartDate; // Track if previousDate came from salesStartDate vs a report
 
     for (let i = 0; i < sortedTickets.length; i++) {
       const ticket = sortedTickets[i];
@@ -267,6 +268,7 @@ async function getDashboardData() {
         previousRevenue = Number(ticket.revenue);
         previousDate = ticketDate;
         hasBaseline = true; // Now we have a baseline for future reports
+        previousDateIsSalesStart = false; // This date came from a report, not salesStartDate
         continue;
       }
 
@@ -276,6 +278,7 @@ async function getDashboardData() {
         previousTotal = ticket.quantity_sold;
         previousRevenue = Number(ticket.revenue);
         previousDate = ticketDate;
+        previousDateIsSalesStart = false;
         continue;
       }
 
@@ -292,8 +295,10 @@ async function getDashboardData() {
           isEstimated: false,
         });
       } else {
-        // previousDate is guaranteed non-null here due to canDistribute check
-        const totalDays = daysBetween(previousDate!, ticketDate) + 1;
+        // If previousDate came from a report (not salesStartDate), start distribution from day after
+        // because the report date's sales are already accounted for in the cumulative total
+        const distributionStartDate = previousDateIsSalesStart ? previousDate! : addDays(previousDate!, 1);
+        const totalDays = daysBetween(distributionStartDate, ticketDate) + 1;
 
         if (totalDays <= 1) {
           distributedData.push({
@@ -309,7 +314,7 @@ async function getDashboardData() {
           const revenuePerDay = revenueDelta > 0 ? revenueDelta / totalDays : 0;
 
           for (let j = 0; j < totalDays; j++) {
-            const date = addDays(previousDate!, j);
+            const date = addDays(distributionStartDate, j);
             const isLastDay = j === totalDays - 1;
             distributedData.push({
               date,
@@ -325,6 +330,7 @@ async function getDashboardData() {
       previousTotal = ticket.quantity_sold;
       previousRevenue = Number(ticket.revenue);
       previousDate = ticketDate;
+      previousDateIsSalesStart = false; // From now on, previousDate is always a report date
     }
   }
 

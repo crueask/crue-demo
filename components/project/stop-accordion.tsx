@@ -259,6 +259,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
       let previousDate: string | null = salesStartDate;
       let previousTotal = 0;
       let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
+      let previousDateIsSalesStart = !!salesStartDate; // Track if previousDate came from salesStartDate vs a report
 
       for (let i = 0; i < ticketSnapshots.length; i++) {
         const ticket = ticketSnapshots[i];
@@ -274,6 +275,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
           previousTotal = ticket.quantity_sold;
           previousDate = ticketDate;
           hasBaseline = true;
+          previousDateIsSalesStart = false; // This date came from a report, not salesStartDate
           continue;
         }
 
@@ -281,6 +283,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
         if (delta <= 0) {
           previousTotal = ticket.quantity_sold;
           previousDate = ticketDate;
+          previousDateIsSalesStart = false;
           continue;
         }
 
@@ -296,8 +299,10 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
             isEstimated: false,
           });
         } else {
-          // previousDate is guaranteed non-null here due to canDistribute check
-          const totalDays = daysBetween(previousDate!, ticketDate) + 1;
+          // If previousDate came from a report (not salesStartDate), start distribution from day after
+          // because the report date's sales are already accounted for in the cumulative total
+          const distributionStartDate = previousDateIsSalesStart ? previousDate! : addDays(previousDate!, 1);
+          const totalDays = daysBetween(distributionStartDate, ticketDate) + 1;
 
           if (totalDays <= 1) {
             distributedData.push({
@@ -310,7 +315,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
             const ticketsPerDay = delta / totalDays;
 
             for (let j = 0; j < totalDays; j++) {
-              const date = addDays(previousDate!, j);
+              const date = addDays(distributionStartDate, j);
               const isLastDay = j === totalDays - 1;
               distributedData.push({
                 date,
@@ -324,6 +329,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
 
         previousTotal = ticket.quantity_sold;
         previousDate = ticketDate;
+        previousDateIsSalesStart = false; // From now on, previousDate is always a report date
       }
     }
 
