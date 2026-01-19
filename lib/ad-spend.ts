@@ -10,7 +10,7 @@ export function applyMva(amount: number, includeMva: boolean): number {
 
 // Source display labels (add more as needed)
 export const AD_SOURCE_LABELS: Record<string, string> = {
-  facebook: 'Meta',
+  facebook: 'Facebook',
   tiktok: 'TikTok',
   snapchat: 'Snapchat',
 };
@@ -258,6 +258,46 @@ export async function getAvailableSources(
 
   return Array.from(sourceTotals.entries())
     .map(([source, totalSpend]) => ({ source, totalSpend }))
+    .sort((a, b) => b.totalSpend - a.totalSpend);
+}
+
+export interface FlatCampaign {
+  source: string;
+  sourceLabel: string;
+  campaign: string;
+  totalSpend: number;
+}
+
+/**
+ * Get all campaigns across all sources in a flat list for search
+ */
+export async function getAllCampaignsFlat(
+  supabase: SupabaseClient
+): Promise<FlatCampaign[]> {
+  const { data } = await supabase
+    .from('facebook_ads')
+    .select('source, campaign, spend');
+
+  if (!data) return [];
+
+  // Aggregate by source+campaign
+  const campaignTotals = new Map<string, { source: string; campaign: string; spend: number }>();
+  for (const row of data) {
+    const key = `${row.source}:${row.campaign}`;
+    const current = campaignTotals.get(key) || { source: row.source, campaign: row.campaign, spend: 0 };
+    campaignTotals.set(key, {
+      ...current,
+      spend: current.spend + Number(row.spend),
+    });
+  }
+
+  return Array.from(campaignTotals.values())
+    .map(({ source, campaign, spend }) => ({
+      source,
+      sourceLabel: getSourceLabel(source),
+      campaign,
+      totalSpend: spend,
+    }))
     .sort((a, b) => b.totalSpend - a.totalSpend);
 }
 

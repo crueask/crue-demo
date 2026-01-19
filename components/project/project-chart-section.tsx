@@ -46,6 +46,7 @@ interface ProjectChartSectionProps {
 export function ProjectChartSection({ projectId, stops }: ProjectChartSectionProps) {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [adSpendData, setAdSpendData] = useState<Record<string, number>>({});
+  const [revenueData, setRevenueData] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   // Chart settings state
@@ -118,6 +119,9 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
     // Determine if we're showing revenue or tickets
     const isRevenue = prefs.metric === 'revenue_daily' || prefs.metric === 'revenue_cumulative';
 
+    // We'll also track revenue by date for ROAS/MER calculations (even when showing tickets)
+    const revenueByDate: Record<string, number> = {};
+
     // Determine aggregation level based on filter
     // If filtering to specific shows, aggregate by show; otherwise by stop
     const filteringToShows = selectedEntities.some(id => {
@@ -132,6 +136,7 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
       date: string;
       entityId: string; // Either stopId or showId depending on filter
       value: number;
+      revenue: number; // Always track revenue for ROAS/MER
       isEstimated: boolean;
     }
 
@@ -178,10 +183,12 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
           if (!ticketDate) continue;
 
           const value = isRevenue ? Number(ticket.revenue) : ticket.quantity_sold;
+          const revenueValue = Number(ticket.revenue);
 
           if (salesStartDate && salesStartDate < ticketDate) {
             const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
             const distributed = distributeValues(value, totalDays, prefs.distributionWeight);
+            const distributedRevenue = distributeValues(revenueValue, totalDays, prefs.distributionWeight);
 
             for (let i = 0; i < totalDays; i++) {
               const date = addDays(salesStartDate, i);
@@ -189,6 +196,7 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
                 date,
                 entityId,
                 value: distributed[i],
+                revenue: distributedRevenue[i],
                 isEstimated: !reportDatesByEntity[entityId]?.has(date),
               });
             }
@@ -199,6 +207,7 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
         // Handle multiple reports
         let previousDate: string | null = salesStartDate;
         let previousValue = 0;
+        let previousRevenue = 0;
         let hasBaseline = !!salesStartDate;
         let previousDateIsSalesStart = !!salesStartDate; // Track if previousDate came from salesStartDate vs a report
 
@@ -208,10 +217,13 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
           if (!ticketDate) continue;
 
           const currentValue = isRevenue ? Number(ticket.revenue) : ticket.quantity_sold;
+          const currentRevenue = Number(ticket.revenue);
           const delta = currentValue - previousValue;
+          const revenueDelta = currentRevenue - previousRevenue;
 
           if (!hasBaseline) {
             previousValue = currentValue;
+            previousRevenue = currentRevenue;
             previousDate = ticketDate;
             hasBaseline = true;
             previousDateIsSalesStart = false; // This date came from a report, not salesStartDate
@@ -220,6 +232,7 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
 
           if (delta <= 0) {
             previousValue = currentValue;
+            previousRevenue = currentRevenue;
             previousDate = ticketDate;
             previousDateIsSalesStart = false;
             continue;
@@ -232,6 +245,7 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
               date: ticketDate,
               entityId,
               value: delta,
+              revenue: revenueDelta,
               isEstimated: false,
             });
           } else {
@@ -245,10 +259,12 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
                 date: ticketDate,
                 entityId,
                 value: delta,
+                revenue: revenueDelta,
                 isEstimated: false,
               });
             } else {
               const distributed = distributeValues(delta, totalDays, prefs.distributionWeight);
+              const distributedRevenue = distributeValues(revenueDelta, totalDays, prefs.distributionWeight);
 
               for (let j = 0; j < totalDays; j++) {
                 const date = addDays(distributionStartDate, j);
@@ -256,6 +272,7 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
                   date,
                   entityId,
                   value: distributed[j],
+                  revenue: distributedRevenue[j],
                   isEstimated: !reportDatesByEntity[entityId]?.has(date),
                 });
               }
@@ -263,6 +280,7 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
           }
 
           previousValue = currentValue;
+          previousRevenue = currentRevenue;
           previousDate = ticketDate;
           previousDateIsSalesStart = false; // From now on, previousDate is always a report date
         }
@@ -390,6 +408,15 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
     }
 
     setChartData(formattedData);
+
+    // Calculate revenue totals by date for ROAS/MER (always, regardless of metric displayed)
+    const revenueByDateTotals: Record<string, number> = {};
+    for (const item of distributedData) {
+      if (item.date >= startDate && item.date <= endDate) {
+        revenueByDateTotals[item.date] = (revenueByDateTotals[item.date] || 0) + item.revenue;
+      }
+    }
+    setRevenueData(revenueByDateTotals);
 
     // Fetch ad spend if enabled
     if (prefs.showAdSpend) {
@@ -536,6 +563,7 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
           isRevenue={isRevenue}
           adSpendData={prefs.showAdSpend ? adSpendData : undefined}
           includeMva={prefs.includeMva}
+          revenueData={prefs.showAdSpend ? revenueData : undefined}
         />
       )}
     </div>

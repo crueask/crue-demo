@@ -3,32 +3,10 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Plus, Trash2, Users } from "lucide-react";
-import {
-  getAvailableSources,
-  getAvailableCampaigns,
-  getAvailableAdsets,
-  hasAdsetConnections,
-  hasCampaignConnection,
-  getSourceLabel,
-} from "@/lib/ad-spend";
+import { getSourceLabel } from "@/lib/ad-spend";
+import { CampaignLinkingDialog } from "./campaign-linking-dialog";
 
 interface Connection {
   id: string;
@@ -64,17 +42,6 @@ export function StopAdConnections({
 
   // Dialog state
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedSource, setSelectedSource] = useState<string>("");
-  const [connectionType, setConnectionType] = useState<"campaign" | "adset">("campaign");
-  const [selectedCampaign, setSelectedCampaign] = useState<string>("");
-  const [selectedAdset, setSelectedAdset] = useState<string>("");
-  const [sources, setSources] = useState<{ source: string; totalSpend: number }[]>([]);
-  const [campaigns, setCampaigns] = useState<{ campaign: string; totalSpend: number }[]>([]);
-  const [adsets, setAdsets] = useState<{ adsetId: string; adsetName: string; totalSpend: number }[]>([]);
-  const [campaignError, setCampaignError] = useState<string | null>(null);
-  const [loadingSources, setLoadingSources] = useState(false);
-  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
-  const [loadingAdsets, setLoadingAdsets] = useState(false);
 
   // Edit allocation state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -140,122 +107,9 @@ export function StopAdConnections({
     fetchConnections();
   }, [stopId]);
 
-  const openAddDialog = async () => {
-    setLoadingSources(true);
-    setSelectedSource("");
-    setConnectionType("campaign");
-    setSelectedCampaign("");
-    setSelectedAdset("");
-    setCampaignError(null);
-    setCampaigns([]);
-    setAdsets([]);
-    setIsAddDialogOpen(true);
-
-    const sourceList = await getAvailableSources(supabase);
-    setSources(sourceList);
-    setLoadingSources(false);
-  };
-
-  const handleSourceSelect = async (source: string) => {
-    setSelectedSource(source);
-    setSelectedCampaign("");
-    setSelectedAdset("");
-    setCampaignError(null);
-    setAdsets([]);
-
-    setLoadingCampaigns(true);
-    const campaignList = await getAvailableCampaigns(supabase, source);
-    setCampaigns(campaignList);
-    setLoadingCampaigns(false);
-  };
-
-  const handleCampaignSelect = async (campaign: string) => {
-    setSelectedCampaign(campaign);
-    setSelectedAdset("");
-    setCampaignError(null);
-
-    // Check constraints
-    if (connectionType === "campaign") {
-      const hasAdsets = await hasAdsetConnections(supabase, selectedSource, campaign);
-      if (hasAdsets) {
-        setCampaignError("Kan ikke koble kampanje - annonsesett fra denne kampanjen er allerede koblet til stopp");
-        return;
-      }
-    }
-
-    // Load adsets if in adset mode
-    if (connectionType === "adset") {
-      const hasCampaign = await hasCampaignConnection(supabase, selectedSource, campaign);
-      if (hasCampaign) {
-        setCampaignError("Kan ikke koble annonsesett - denne kampanjen er allerede koblet til et stopp");
-        return;
-      }
-      setLoadingAdsets(true);
-      const adsetList = await getAvailableAdsets(supabase, selectedSource, campaign);
-      setAdsets(adsetList);
-      setLoadingAdsets(false);
-    }
-  };
-
-  const handleConnectionTypeChange = async (type: "campaign" | "adset") => {
-    setConnectionType(type);
-    setSelectedAdset("");
-    setCampaignError(null);
-
-    if (selectedCampaign && selectedSource) {
-      // Re-check constraints for new type
-      if (type === "campaign") {
-        const hasAdsets = await hasAdsetConnections(supabase, selectedSource, selectedCampaign);
-        if (hasAdsets) {
-          setCampaignError("Kan ikke koble kampanje - annonsesett fra denne kampanjen er allerede koblet til stopp");
-        }
-      } else {
-        const hasCampaign = await hasCampaignConnection(supabase, selectedSource, selectedCampaign);
-        if (hasCampaign) {
-          setCampaignError("Kan ikke koble annonsesett - denne kampanjen er allerede koblet til et stopp");
-        } else {
-          setLoadingAdsets(true);
-          const adsetList = await getAvailableAdsets(supabase, selectedSource, selectedCampaign);
-          setAdsets(adsetList);
-          setLoadingAdsets(false);
-        }
-      }
-    }
-  };
-
-  const handleAddConnection = async () => {
-    if (!selectedSource || !selectedCampaign) return;
-    if (connectionType === "adset" && !selectedAdset) return;
-    if (campaignError) return;
-
-    setSaving(true);
-    try {
-      const response = await fetch("/api/stop-ad-connections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          stopId,
-          connectionType,
-          source: selectedSource,
-          campaign: selectedCampaign,
-          adsetId: connectionType === "adset" ? selectedAdset : undefined,
-        }),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        setIsAddDialogOpen(false);
-        await fetchConnections();
-        onDataChange?.();
-      } else {
-        setCampaignError(data.error || "Kunne ikke opprette kobling");
-      }
-    } catch (error) {
-      console.error("Error creating connection:", error);
-      setCampaignError("Noe gikk galt");
-    } finally {
-      setSaving(false);
-    }
+  const handleConnectionAdded = async () => {
+    await fetchConnections();
+    onDataChange?.();
   };
 
   const handleUpdateAllocation = async (connectionId: string, newValue: number) => {
@@ -306,16 +160,6 @@ export function StopAdConnections({
     }
   };
 
-  const formatCurrency = (value: number) => {
-    if (value >= 1000000) {
-      return `${(value / 1000000).toFixed(1)}M kr`;
-    }
-    if (value >= 1000) {
-      return `${(value / 1000).toFixed(0)}k kr`;
-    }
-    return new Intl.NumberFormat("nb-NO").format(value) + " kr";
-  };
-
   const getSharedStopsForConnection = (conn: Connection): SharedStop[] => {
     const key = conn.connection_type === "adset"
       ? `${conn.source}:adset:${conn.campaign}:${conn.adset_id}`
@@ -333,7 +177,7 @@ export function StopAdConnections({
           variant="outline"
           size="sm"
           className="h-7 text-xs"
-          onClick={openAddDialog}
+          onClick={() => setIsAddDialogOpen(true)}
           disabled={loading}
         >
           <Plus className="h-3.5 w-3.5 mr-1" />
@@ -445,146 +289,13 @@ export function StopAdConnections({
         </div>
       )}
 
-      {/* Add Connection Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Koble annonsekampanje</DialogTitle>
-            <DialogDescription>
-              Koble en kampanje eller annonsesett til {stopName}.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label>Kilde</Label>
-              {loadingSources ? (
-                <div className="text-sm text-gray-500 py-2">Laster kilder...</div>
-              ) : sources.length === 0 ? (
-                <div className="text-sm text-gray-500 py-2">Ingen annonsekilder funnet</div>
-              ) : (
-                <Select value={selectedSource} onValueChange={handleSourceSelect}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Velg kilde..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sources.map((s) => (
-                      <SelectItem key={s.source} value={s.source}>
-                        <div className="flex items-center justify-between gap-4 w-full">
-                          <span>{getSourceLabel(s.source)}</span>
-                          <span className="text-xs text-gray-400 flex-shrink-0">
-                            {formatCurrency(s.totalSpend)}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-
-            {selectedSource && (
-              <>
-                <div className="grid gap-2">
-                  <Label>Koblingsnivå</Label>
-                  <Select
-                    value={connectionType}
-                    onValueChange={(v) => handleConnectionTypeChange(v as "campaign" | "adset")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="campaign">Kampanje</SelectItem>
-                      <SelectItem value="adset">Annonsesett</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label>Kampanje</Label>
-                  {loadingCampaigns ? (
-                    <div className="text-sm text-gray-500 py-2">Laster kampanjer...</div>
-                  ) : campaigns.length === 0 ? (
-                    <div className="text-sm text-gray-500 py-2">Ingen kampanjer funnet</div>
-                  ) : (
-                    <Select value={selectedCampaign} onValueChange={handleCampaignSelect}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Velg kampanje..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {campaigns.map((c) => (
-                          <SelectItem key={c.campaign} value={c.campaign}>
-                            <div className="flex items-center justify-between gap-4 w-full">
-                              <span className="truncate">{c.campaign}</span>
-                              <span className="text-xs text-gray-400 flex-shrink-0">
-                                {formatCurrency(c.totalSpend)}
-                              </span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-              </>
-            )}
-
-            {connectionType === "adset" && selectedCampaign && !campaignError && (
-              <div className="grid gap-2">
-                <Label>Annonsesett</Label>
-                {loadingAdsets ? (
-                  <div className="text-sm text-gray-500 py-2">Laster annonsesett...</div>
-                ) : adsets.length === 0 ? (
-                  <div className="text-sm text-gray-500 py-2">Ingen annonsesett funnet</div>
-                ) : (
-                  <Select value={selectedAdset} onValueChange={setSelectedAdset}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Velg annonsesett..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {adsets.map((a) => (
-                        <SelectItem key={a.adsetId} value={a.adsetId}>
-                          <div className="flex items-center justify-between gap-4 w-full">
-                            <span className="truncate">{a.adsetName}</span>
-                            <span className="text-xs text-gray-400 flex-shrink-0">
-                              {formatCurrency(a.totalSpend)}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-            )}
-
-            {campaignError && (
-              <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-md">
-                {campaignError}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-              Avbryt
-            </Button>
-            <Button
-              onClick={handleAddConnection}
-              disabled={
-                saving ||
-                !selectedSource ||
-                !selectedCampaign ||
-                (connectionType === "adset" && !selectedAdset) ||
-                !!campaignError
-              }
-            >
-              {saving ? "Kobler..." : "Koble til"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CampaignLinkingDialog
+        open={isAddDialogOpen}
+        onOpenChange={setIsAddDialogOpen}
+        stopId={stopId}
+        stopName={stopName}
+        onSuccess={handleConnectionAdded}
+      />
     </div>
   );
 }

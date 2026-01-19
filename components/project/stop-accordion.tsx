@@ -29,9 +29,12 @@ import {
   FileText,
   Trash2,
   Pencil,
+  Megaphone,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TicketsChart } from "@/components/project/tickets-chart";
 import { StopAdConnections } from "@/components/project/stop-ad-connections";
+import { getStopAdSpend, applyMva } from "@/lib/ad-spend";
 
 interface Ticket {
   id: string;
@@ -64,6 +67,7 @@ interface Stop {
   capacity: number | null;
   notes: string | null;
   shows: Show[];
+  hasAdConnections?: boolean;
 }
 
 interface StopAccordionProps {
@@ -81,6 +85,8 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
 
   // Chart data state
   const [stopChartData, setStopChartData] = useState<ChartDataPoint[]>([]);
+  const [stopAdSpendData, setStopAdSpendData] = useState<Record<string, number>>({});
+  const [stopRevenueData, setStopRevenueData] = useState<Record<string, number>>({});
   const [showChartData, setShowChartData] = useState<Record<string, ChartDataPoint[]>>({});
   const [expandedShows, setExpandedShows] = useState<Set<string>>(new Set());
   const [loadingCharts, setLoadingCharts] = useState(false);
@@ -202,6 +208,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
       date: string;
       showId: string;
       tickets: number;
+      revenue: number;
       isEstimated: boolean;
     }
 
@@ -211,7 +218,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     for (const show of stop.shows) {
       const { data: ticketSnapshots } = await supabase
         .from("tickets")
-        .select("quantity_sold, sale_date, reported_at")
+        .select("quantity_sold, revenue, sale_date, reported_at")
         .eq("show_id", show.id)
         .order("sale_date", { ascending: true, nullsFirst: false })
         .order("reported_at", { ascending: true });
@@ -240,6 +247,8 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
         if (salesStartDate && salesStartDate < ticketDate) {
           const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
           const ticketsPerDay = ticket.quantity_sold / totalDays;
+          const ticketRevenue = Number(ticket.revenue) || 0;
+          const revenuePerDay = ticketRevenue / totalDays;
 
           for (let i = 0; i < totalDays; i++) {
             const date = addDays(salesStartDate, i);
@@ -248,6 +257,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
               date,
               showId: show.id,
               tickets: Math.round(ticketsPerDay),
+              revenue: revenuePerDay,
               isEstimated: !isLastDay,
             });
           }
@@ -259,6 +269,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
       // Only use salesStartDate for distribution if it exists
       let previousDate: string | null = salesStartDate;
       let previousTotal = 0;
+      let previousRevenue = 0;
       let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
       let previousDateIsSalesStart = !!salesStartDate; // Track if previousDate came from salesStartDate vs a report
 
@@ -268,12 +279,15 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
         if (!ticketDate) continue;
 
         const delta = ticket.quantity_sold - previousTotal;
+        const ticketRevenue = Number(ticket.revenue) || 0;
+        const revenueDelta = ticketRevenue - previousRevenue;
 
         // For the first report without salesStartDate, we can't show anything
         // (we don't know when sales started, so no baseline to compare against)
         // But we establish the baseline for subsequent reports
         if (!hasBaseline) {
           previousTotal = ticket.quantity_sold;
+          previousRevenue = ticketRevenue;
           previousDate = ticketDate;
           hasBaseline = true;
           previousDateIsSalesStart = false; // This date came from a report, not salesStartDate
@@ -283,6 +297,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
         // Skip if delta is 0 or negative (no new tickets sold)
         if (delta <= 0) {
           previousTotal = ticket.quantity_sold;
+          previousRevenue = ticketRevenue;
           previousDate = ticketDate;
           previousDateIsSalesStart = false;
           continue;
@@ -297,6 +312,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
             date: ticketDate,
             showId: show.id,
             tickets: delta,
+            revenue: revenueDelta,
             isEstimated: false,
           });
         } else {
@@ -310,10 +326,12 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
               date: ticketDate,
               showId: show.id,
               tickets: delta,
+              revenue: revenueDelta,
               isEstimated: false,
             });
           } else {
             const ticketsPerDay = delta / totalDays;
+            const revenuePerDay = revenueDelta / totalDays;
 
             for (let j = 0; j < totalDays; j++) {
               const date = addDays(distributionStartDate, j);
@@ -322,6 +340,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                 date,
                 showId: show.id,
                 tickets: Math.round(ticketsPerDay),
+                revenue: revenuePerDay,
                 isEstimated: !isLastDay,
               });
             }
@@ -329,6 +348,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
         }
 
         previousTotal = ticket.quantity_sold;
+        previousRevenue = ticketRevenue;
         previousDate = ticketDate;
         previousDateIsSalesStart = false; // From now on, previousDate is always a report date
       }
@@ -336,12 +356,17 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
 
     // Aggregate distributed data by date and show
     const ticketsByDateAndShow: Record<string, Record<string, { actual: number; estimated: number }>> = {};
+    const revenueByDate: Record<string, number> = {};
 
+    // Calculate date range for the last 14 days
+    const dates: string[] = [];
     for (let i = 0; i < 14; i++) {
       const date = new Date();
       date.setDate(date.getDate() - 1 - (13 - i));
       const dateStr = date.toISOString().split('T')[0];
+      dates.push(dateStr);
       ticketsByDateAndShow[dateStr] = {};
+      revenueByDate[dateStr] = 0;
       for (const show of stop.shows) {
         ticketsByDateAndShow[dateStr][show.id] = { actual: 0, estimated: 0 };
       }
@@ -354,6 +379,8 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
         } else {
           ticketsByDateAndShow[item.date][item.showId].actual += item.tickets;
         }
+        // Aggregate revenue
+        revenueByDate[item.date] = (revenueByDate[item.date] || 0) + item.revenue;
       }
     }
 
@@ -370,6 +397,14 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
       });
 
     setStopChartData(formattedData);
+    setStopRevenueData(revenueByDate);
+
+    // Fetch ad spend for the stop
+    const startDate = dates[0];
+    const endDate = dates[dates.length - 1];
+    const adSpend = await getStopAdSpend(supabase, stop.id, startDate, endDate);
+    setStopAdSpendData(adSpend);
+
     setLoadingCharts(false);
   }
 
@@ -689,12 +724,28 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
       >
         <div className="flex-1">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-medium text-gray-900">
-              {stop.shows.length > 0 && (
-                <span className="text-gray-500 font-normal">{getDateRangeLabel()} – </span>
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium text-gray-900">
+                {stop.shows.length > 0 && (
+                  <span className="text-gray-500 font-normal">{getDateRangeLabel()} – </span>
+                )}
+                {stop.name}
+              </h3>
+              {stop.hasAdConnections && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-100">
+                        <Megaphone className="h-3 w-3 text-blue-600" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Koblet til annonsekampanjer</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
-              {stop.name}
-            </h3>
+            </div>
             <span className="text-sm text-gray-500">{fillRate}%</span>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-500 mb-2">
@@ -739,6 +790,9 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                   }))}
                   title="Billettutvikling per show"
                   height={180}
+                  adSpendData={stopAdSpendData}
+                  revenueData={stopRevenueData}
+                  includeMva={true}
                 />
               )}
             </div>

@@ -61,6 +61,7 @@ interface Stop {
   capacity: number | null;
   notes: string | null;
   shows: Show[];
+  hasAdConnections?: boolean;
 }
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -139,9 +140,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               )
             : [];
 
+          // Check for ad connections
+          const { data: adConnections } = await supabase
+            .from("stop_ad_connections")
+            .select("id")
+            .eq("stop_id", stop.id)
+            .limit(1);
+
           return {
             ...stop,
             shows: showsWithTickets,
+            hasAdConnections: (adConnections?.length || 0) > 0,
           };
         })
       );

@@ -25,6 +25,7 @@ interface TicketsChartProps {
   isRevenue?: boolean;
   adSpendData?: Record<string, number>;
   includeMva?: boolean;
+  revenueData?: Record<string, number>; // Daily revenue for ROAS/MER calculation
 }
 
 // Color palette for entities - using distinct colors
@@ -62,6 +63,7 @@ export function TicketsChart({
   isRevenue = false,
   adSpendData,
   includeMva = false,
+  revenueData,
 }: TicketsChartProps) {
   // Build chart config dynamically based on entities
   const chartConfig = entities.reduce((acc, entity, index) => {
@@ -289,22 +291,50 @@ export function TicketsChart({
                       );
                     })}
                     {/* Ad spend in tooltip */}
-                    {adSpendValue > 0 && (
-                      <div className="flex items-center justify-between gap-4 pt-1.5 mt-1.5 border-t border-gray-100">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-2.5 h-0.5 flex-shrink-0"
-                            style={{ backgroundColor: AD_SPEND_COLOR }}
-                          />
-                          <span className="text-sm text-gray-600">
-                            Annonsekostnad{includeMva ? '' : ' (eks. mva)'}
-                          </span>
-                        </div>
-                        <span className="text-sm font-semibold" style={{ color: AD_SPEND_COLOR }}>
-                          {formatCurrency(adSpendValue)} kr
-                        </span>
-                      </div>
-                    )}
+                    {adSpendValue > 0 && (() => {
+                      // Get daily revenue - either from revenueData prop or from grandTotal if displaying revenue
+                      const dailyRevenue = revenueData?.[label] ?? (isRevenue ? grandTotal : 0);
+                      // Always calculate ROAS/MER with MVA (25%)
+                      const adSpendWithMva = adSpendValue * 1.25;
+                      const hasRoasData = adSpendWithMva > 0 && dailyRevenue > 0;
+                      const roas = hasRoasData ? dailyRevenue / adSpendWithMva : 0;
+                      const mer = hasRoasData ? (adSpendWithMva / dailyRevenue) * 100 : 0;
+
+                      return (
+                        <>
+                          <div className="flex items-center justify-between gap-4 pt-1.5 mt-1.5 border-t border-gray-100">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-2.5 h-0.5 flex-shrink-0"
+                                style={{ backgroundColor: AD_SPEND_COLOR }}
+                              />
+                              <span className="text-sm text-gray-600">
+                                Annonsekostnad{includeMva ? '' : ' (eks. mva)'}
+                              </span>
+                            </div>
+                            <span className="text-sm font-semibold" style={{ color: AD_SPEND_COLOR }}>
+                              {formatCurrency(adSpendValue)} kr
+                            </span>
+                          </div>
+                          {hasRoasData && (
+                            <>
+                              <div className="flex items-center justify-between gap-4">
+                                <span className="text-sm text-gray-600">ROAS</span>
+                                <span className="text-sm font-semibold text-green-600">
+                                  {roas.toFixed(1)}x
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-4">
+                                <span className="text-sm text-gray-600">MER</span>
+                                <span className="text-sm font-semibold text-gray-600">
+                                  {mer.toFixed(0)}%
+                                </span>
+                              </div>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                   {/* Missing reports section */}
                   {missingStops.length > 0 && (
