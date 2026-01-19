@@ -12,7 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Search, BarChart3, Layers, ArrowLeft, Check, ChevronRight } from "lucide-react";
+import { Search, Layers, Check, ChevronRight } from "lucide-react";
 import {
   getAllCampaignsWithAdsets,
   hasAdsetConnections,
@@ -50,8 +50,6 @@ interface CampaignLinkingDialogProps {
   onSuccess: () => void;
 }
 
-type Step = "search" | "connection-type";
-
 // Represents a campaign with filtered adsets for display
 interface FilteredCampaign {
   campaign: CampaignWithAdsets;
@@ -78,16 +76,6 @@ export function CampaignLinkingDialog({
   // Search & filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
-
-  // Selection state
-  const [step, setStep] = useState<Step>("search");
-  const [selectedCampaign, setSelectedCampaign] = useState<CampaignWithAdsets | null>(null);
-
-  // Connection type availability
-  const [canUseCampaign, setCanUseCampaign] = useState(true);
-  const [canUseAdset, setCanUseAdset] = useState(true);
-  const [campaignDisabledReason, setCampaignDisabledReason] = useState<string | null>(null);
-  const [adsetDisabledReason, setAdsetDisabledReason] = useState<string | null>(null);
 
   // Keyboard navigation
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -162,8 +150,6 @@ export function CampaignLinkingDialog({
     if (open) {
       setSearchQuery("");
       setSelectedSources(new Set());
-      setStep("search");
-      setSelectedCampaign(null);
       setHighlightedIndex(0);
 
       // Load campaigns with adsets
@@ -187,41 +173,26 @@ export function CampaignLinkingDialog({
 
   // Scroll highlighted item into view
   useEffect(() => {
-    if (step === "search" && listRef.current) {
+    if (listRef.current) {
       const items = listRef.current.querySelectorAll("[data-item]");
       const highlightedItem = items[highlightedIndex];
       if (highlightedItem) {
         highlightedItem.scrollIntoView({ block: "nearest" });
       }
     }
-  }, [highlightedIndex, step]);
+  }, [highlightedIndex]);
 
   const handleCampaignSelect = useCallback(
     async (campaign: CampaignWithAdsets) => {
-      setSelectedCampaign(campaign);
-      setStep("connection-type");
-
-      // Check constraints
-      const [hasAdsets, hasCampaign] = await Promise.all([
-        hasAdsetConnections(supabase, campaign.source, campaign.campaign),
-        hasCampaignConnection(supabase, campaign.source, campaign.campaign),
-      ]);
-
+      // Check if adsets from this campaign are already connected
+      const hasAdsets = await hasAdsetConnections(supabase, campaign.source, campaign.campaign);
       if (hasAdsets) {
-        setCanUseCampaign(false);
-        setCampaignDisabledReason("Annonsesett fra denne kampanjen er allerede koblet");
-      } else {
-        setCanUseCampaign(true);
-        setCampaignDisabledReason(null);
+        alert("Annonsesett fra denne kampanjen er allerede koblet. Du kan ikke koble hele kampanjen.");
+        return;
       }
 
-      if (hasCampaign) {
-        setCanUseAdset(false);
-        setAdsetDisabledReason("Denne kampanjen er allerede koblet");
-      } else {
-        setCanUseAdset(true);
-        setAdsetDisabledReason(null);
-      }
+      // Create campaign connection directly
+      await createConnection(campaign, "campaign", null);
     },
     [supabase]
   );
@@ -240,30 +211,6 @@ export function CampaignLinkingDialog({
       await createConnection(campaign, "adset", adset.adsetId);
     },
     [supabase]
-  );
-
-  const handleConnectionTypeSelect = useCallback(
-    async (type: "campaign" | "adset") => {
-      if (!selectedCampaign) return;
-
-      if (type === "adset") {
-        // If only one adset, select it automatically
-        if (selectedCampaign.adsets.length === 1) {
-          await createConnection(selectedCampaign, "adset", selectedCampaign.adsets[0].adsetId);
-        } else if (selectedCampaign.adsets.length === 0) {
-          // No adsets available
-          alert("Ingen annonsesett tilgjengelig for denne kampanjen.");
-        } else {
-          // Go back to search with campaign pre-expanded to show adsets
-          setStep("search");
-          setSearchQuery(selectedCampaign.campaign);
-        }
-      } else {
-        // Create campaign connection directly
-        await createConnection(selectedCampaign, type, null);
-      }
-    },
-    [selectedCampaign]
   );
 
   const createConnection = async (
@@ -318,8 +265,6 @@ export function CampaignLinkingDialog({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (step !== "search") return;
-
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
@@ -349,7 +294,7 @@ export function CampaignLinkingDialog({
           break;
       }
     },
-    [step, totalNavigableItems, highlightedIndex, searchQuery, handleCampaignSelect, handleAdsetSelect, onOpenChange]
+    [totalNavigableItems, highlightedIndex, searchQuery, handleCampaignSelect, handleAdsetSelect, onOpenChange]
   );
 
   const toggleSource = (source: string) => {
@@ -362,12 +307,6 @@ export function CampaignLinkingDialog({
       }
       return next;
     });
-  };
-
-  const goBack = () => {
-    setStep("search");
-    setSelectedCampaign(null);
-    setTimeout(() => searchInputRef.current?.focus(), 50);
   };
 
   // Render flat list with proper indices
@@ -439,26 +378,13 @@ export function CampaignLinkingDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px] p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-4">
-          <div className="flex items-center gap-3">
-            {step !== "search" && (
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={goBack}>
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            )}
-            <DialogTitle>
-              {step === "search" && "Koble annonsekampanje"}
-              {step === "connection-type" && "Velg koblingstype"}
-            </DialogTitle>
-          </div>
-          {step === "search" && (
-            <p className="text-sm text-muted-foreground mt-1">
-              Koble en kampanje eller annonsesett til {stopName}
-            </p>
-          )}
+          <DialogTitle>Koble annonsekampanje</DialogTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Koble en kampanje eller annonsesett til {stopName}
+          </p>
         </DialogHeader>
 
-        {step === "search" && (
-          <div className="px-6 pb-6" onKeyDown={handleKeyDown}>
+        <div className="px-6 pb-6" onKeyDown={handleKeyDown}>
             {/* Search input */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -526,70 +452,7 @@ export function CampaignLinkingDialog({
                 )}
               </div>
             </ScrollArea>
-          </div>
-        )}
-
-        {step === "connection-type" && selectedCampaign && (
-          <div className="px-6 pb-6">
-            <div className="mb-4 p-3 bg-muted/50 rounded-lg">
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant="secondary"
-                  className={getSourceColor(selectedCampaign.source)}
-                >
-                  {selectedCampaign.sourceLabel}
-                </Badge>
-                <span className="text-sm font-medium truncate">
-                  {selectedCampaign.campaign}
-                </span>
-              </div>
-            </div>
-
-            <p className="text-sm text-muted-foreground mb-4">
-              Hvordan vil du koble denne kampanjen?
-            </p>
-
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                className={`p-4 rounded-lg border-2 text-left transition-all ${
-                  canUseCampaign
-                    ? "border-border hover:border-primary hover:bg-accent/50 cursor-pointer"
-                    : "border-border/50 bg-muted/30 cursor-not-allowed opacity-60"
-                }`}
-                onClick={() => canUseCampaign && handleConnectionTypeSelect("campaign")}
-                disabled={!canUseCampaign || saving}
-              >
-                <BarChart3 className="h-6 w-6 mb-2 text-primary" />
-                <div className="font-medium text-sm">Kampanje</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {campaignDisabledReason || "Koble hele kampanjen"}
-                </div>
-              </button>
-
-              <button
-                className={`p-4 rounded-lg border-2 text-left transition-all ${
-                  canUseAdset
-                    ? "border-border hover:border-primary hover:bg-accent/50 cursor-pointer"
-                    : "border-border/50 bg-muted/30 cursor-not-allowed opacity-60"
-                }`}
-                onClick={() => canUseAdset && handleConnectionTypeSelect("adset")}
-                disabled={!canUseAdset || saving}
-              >
-                <Layers className="h-6 w-6 mb-2 text-primary" />
-                <div className="font-medium text-sm">Annonsesett</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {adsetDisabledReason || `Velg blant ${selectedCampaign.adsets.length} annonsesett`}
-                </div>
-              </button>
-            </div>
-
-            {saving && (
-              <div className="mt-4 text-center text-sm text-muted-foreground">
-                Kobler...
-              </div>
-            )}
-          </div>
-        )}
+        </div>
       </DialogContent>
     </Dialog>
   );
