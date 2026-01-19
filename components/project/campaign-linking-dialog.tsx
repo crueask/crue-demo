@@ -12,13 +12,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Search, BarChart3, Layers, ArrowLeft, Check } from "lucide-react";
+import { Search, BarChart3, Layers, ArrowLeft, Check, ChevronRight } from "lucide-react";
 import {
-  getAllCampaignsFlat,
-  getAvailableAdsets,
+  getAllCampaignsWithAdsets,
   hasAdsetConnections,
   hasCampaignConnection,
-  type FlatCampaign,
+  type CampaignWithAdsets,
+  type CampaignAdset,
 } from "@/lib/ad-spend";
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -50,12 +50,13 @@ interface CampaignLinkingDialogProps {
   onSuccess: () => void;
 }
 
-type Step = "search" | "connection-type" | "adset-select";
+type Step = "search" | "connection-type";
 
-interface Adset {
-  adsetId: string;
-  adsetName: string;
-  totalSpend: number;
+// Represents a campaign with filtered adsets for display
+interface FilteredCampaign {
+  campaign: CampaignWithAdsets;
+  matchedAdsets: CampaignAdset[]; // Adsets that match the search
+  campaignMatches: boolean; // Whether the campaign name itself matches
 }
 
 export function CampaignLinkingDialog({
@@ -70,7 +71,7 @@ export function CampaignLinkingDialog({
   const listRef = useRef<HTMLDivElement>(null);
 
   // Data state
-  const [allCampaigns, setAllCampaigns] = useState<FlatCampaign[]>([]);
+  const [allCampaigns, setAllCampaigns] = useState<CampaignWithAdsets[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -80,13 +81,7 @@ export function CampaignLinkingDialog({
 
   // Selection state
   const [step, setStep] = useState<Step>("search");
-  const [selectedCampaign, setSelectedCampaign] = useState<FlatCampaign | null>(null);
-  const [connectionType, setConnectionType] = useState<"campaign" | "adset" | null>(null);
-  const [selectedAdset, setSelectedAdset] = useState<string | null>(null);
-
-  // Adset data
-  const [adsets, setAdsets] = useState<Adset[]>([]);
-  const [loadingAdsets, setLoadingAdsets] = useState(false);
+  const [selectedCampaign, setSelectedCampaign] = useState<CampaignWithAdsets | null>(null);
 
   // Connection type availability
   const [canUseCampaign, setCanUseCampaign] = useState(true);
@@ -108,7 +103,7 @@ export function CampaignLinkingDialog({
     return Array.from(sources.entries()).map(([source, label]) => ({ source, label }));
   }, [allCampaigns]);
 
-  // Filter campaigns
+  // Filter campaigns and their adsets
   const filteredCampaigns = useMemo(() => {
     let campaigns = allCampaigns;
 
@@ -117,18 +112,50 @@ export function CampaignLinkingDialog({
       campaigns = campaigns.filter((c) => selectedSources.has(c.source));
     }
 
-    // Search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      campaigns = campaigns.filter(
-        (c) =>
-          c.campaign.toLowerCase().includes(query) ||
-          c.sourceLabel.toLowerCase().includes(query)
-      );
+    // Search filter - match campaigns and/or adsets
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) {
+      // No search - show all campaigns with all their adsets
+      return campaigns.map((campaign) => ({
+        campaign,
+        matchedAdsets: campaign.adsets,
+        campaignMatches: true,
+      }));
     }
 
-    return campaigns;
+    const result: FilteredCampaign[] = [];
+    for (const campaign of campaigns) {
+      const campaignMatches =
+        campaign.campaign.toLowerCase().includes(query) ||
+        campaign.sourceLabel.toLowerCase().includes(query);
+
+      const matchedAdsets = campaign.adsets.filter((adset) =>
+        adset.adsetName.toLowerCase().includes(query)
+      );
+
+      // Include if campaign matches (show all adsets) or any adset matches
+      if (campaignMatches || matchedAdsets.length > 0) {
+        result.push({
+          campaign,
+          // If campaign matches, show all adsets; otherwise only matched adsets
+          matchedAdsets: campaignMatches ? campaign.adsets : matchedAdsets,
+          campaignMatches,
+        });
+      }
+    }
+
+    return result;
   }, [allCampaigns, selectedSources, searchQuery]);
+
+  // Count total items for keyboard navigation
+  const totalNavigableItems = useMemo(() => {
+    let count = 0;
+    for (const fc of filteredCampaigns) {
+      count++; // Campaign row
+      count += fc.matchedAdsets.length; // Adset rows
+    }
+    return count;
+  }, [filteredCampaigns]);
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -137,14 +164,11 @@ export function CampaignLinkingDialog({
       setSelectedSources(new Set());
       setStep("search");
       setSelectedCampaign(null);
-      setConnectionType(null);
-      setSelectedAdset(null);
       setHighlightedIndex(0);
-      setAdsets([]);
 
-      // Load campaigns
+      // Load campaigns with adsets
       setLoading(true);
-      getAllCampaignsFlat(supabase).then((campaigns) => {
+      getAllCampaignsWithAdsets(supabase).then((campaigns) => {
         setAllCampaigns(campaigns);
         setLoading(false);
       });
@@ -159,12 +183,12 @@ export function CampaignLinkingDialog({
   // Reset highlighted index when filtered results change
   useEffect(() => {
     setHighlightedIndex(0);
-  }, [filteredCampaigns.length]);
+  }, [filteredCampaigns.length, searchQuery]);
 
   // Scroll highlighted item into view
   useEffect(() => {
     if (step === "search" && listRef.current) {
-      const items = listRef.current.querySelectorAll("[data-campaign-item]");
+      const items = listRef.current.querySelectorAll("[data-item]");
       const highlightedItem = items[highlightedIndex];
       if (highlightedItem) {
         highlightedItem.scrollIntoView({ block: "nearest" });
@@ -173,7 +197,7 @@ export function CampaignLinkingDialog({
   }, [highlightedIndex, step]);
 
   const handleCampaignSelect = useCallback(
-    async (campaign: FlatCampaign) => {
+    async (campaign: CampaignWithAdsets) => {
       setSelectedCampaign(campaign);
       setStep("connection-type");
 
@@ -202,39 +226,51 @@ export function CampaignLinkingDialog({
     [supabase]
   );
 
+  const handleAdsetSelect = useCallback(
+    async (campaign: CampaignWithAdsets, adset: CampaignAdset) => {
+      // Check if campaign is already connected
+      const hasCampaign = await hasCampaignConnection(supabase, campaign.source, campaign.campaign);
+      if (hasCampaign) {
+        // Can't add adset if campaign is connected
+        alert("Denne kampanjen er allerede koblet. Du kan ikke legge til annonsesett.");
+        return;
+      }
+
+      // Create adset connection directly
+      await createConnection(campaign, "adset", adset.adsetId);
+    },
+    [supabase]
+  );
+
   const handleConnectionTypeSelect = useCallback(
     async (type: "campaign" | "adset") => {
-      setConnectionType(type);
+      if (!selectedCampaign) return;
 
-      if (type === "adset" && selectedCampaign) {
-        setStep("adset-select");
-        setLoadingAdsets(true);
-        const adsetList = await getAvailableAdsets(
-          supabase,
-          selectedCampaign.source,
-          selectedCampaign.campaign
-        );
-        setAdsets(adsetList);
-        setLoadingAdsets(false);
+      if (type === "adset") {
+        // If only one adset, select it automatically
+        if (selectedCampaign.adsets.length === 1) {
+          await createConnection(selectedCampaign, "adset", selectedCampaign.adsets[0].adsetId);
+        } else if (selectedCampaign.adsets.length === 0) {
+          // No adsets available
+          alert("Ingen annonsesett tilgjengelig for denne kampanjen.");
+        } else {
+          // Go back to search with campaign pre-expanded to show adsets
+          setStep("search");
+          setSearchQuery(selectedCampaign.campaign);
+        }
       } else {
         // Create campaign connection directly
-        await createConnection(type, null);
+        await createConnection(selectedCampaign, type, null);
       }
     },
-    [supabase, selectedCampaign]
+    [selectedCampaign]
   );
 
-  const handleAdsetSelect = useCallback(
-    async (adsetId: string) => {
-      setSelectedAdset(adsetId);
-      await createConnection("adset", adsetId);
-    },
-    []
-  );
-
-  const createConnection = async (type: "campaign" | "adset", adsetId: string | null) => {
-    if (!selectedCampaign) return;
-
+  const createConnection = async (
+    campaign: CampaignWithAdsets,
+    type: "campaign" | "adset",
+    adsetId: string | null
+  ) => {
     setSaving(true);
     try {
       const response = await fetch("/api/stop-ad-connections", {
@@ -243,8 +279,8 @@ export function CampaignLinkingDialog({
         body: JSON.stringify({
           stopId,
           connectionType: type,
-          source: selectedCampaign.source,
-          campaign: selectedCampaign.campaign,
+          source: campaign.source,
+          campaign: campaign.campaign,
           adsetId: type === "adset" ? adsetId : undefined,
         }),
       });
@@ -261,6 +297,25 @@ export function CampaignLinkingDialog({
     }
   };
 
+  // Get item at flat index (for keyboard navigation)
+  const getItemAtIndex = (index: number): { type: "campaign" | "adset"; campaign: CampaignWithAdsets; adset?: CampaignAdset } | null => {
+    let currentIndex = 0;
+    for (const fc of filteredCampaigns) {
+      if (currentIndex === index) {
+        return { type: "campaign", campaign: fc.campaign };
+      }
+      currentIndex++;
+
+      for (const adset of fc.matchedAdsets) {
+        if (currentIndex === index) {
+          return { type: "adset", campaign: fc.campaign, adset };
+        }
+        currentIndex++;
+      }
+    }
+    return null;
+  };
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (step !== "search") return;
@@ -268,7 +323,7 @@ export function CampaignLinkingDialog({
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
-          setHighlightedIndex((i) => Math.min(i + 1, filteredCampaigns.length - 1));
+          setHighlightedIndex((i) => Math.min(i + 1, totalNavigableItems - 1));
           break;
         case "ArrowUp":
           e.preventDefault();
@@ -276,8 +331,13 @@ export function CampaignLinkingDialog({
           break;
         case "Enter":
           e.preventDefault();
-          if (filteredCampaigns[highlightedIndex]) {
-            handleCampaignSelect(filteredCampaigns[highlightedIndex]);
+          const item = getItemAtIndex(highlightedIndex);
+          if (item) {
+            if (item.type === "campaign") {
+              handleCampaignSelect(item.campaign);
+            } else if (item.adset) {
+              handleAdsetSelect(item.campaign, item.adset);
+            }
           }
           break;
         case "Escape":
@@ -289,7 +349,7 @@ export function CampaignLinkingDialog({
           break;
       }
     },
-    [step, filteredCampaigns, highlightedIndex, searchQuery, handleCampaignSelect, onOpenChange]
+    [step, totalNavigableItems, highlightedIndex, searchQuery, handleCampaignSelect, handleAdsetSelect, onOpenChange]
   );
 
   const toggleSource = (source: string) => {
@@ -305,15 +365,74 @@ export function CampaignLinkingDialog({
   };
 
   const goBack = () => {
-    if (step === "adset-select") {
-      setStep("connection-type");
-      setSelectedAdset(null);
-    } else if (step === "connection-type") {
-      setStep("search");
-      setSelectedCampaign(null);
-      setConnectionType(null);
-      setTimeout(() => searchInputRef.current?.focus(), 50);
+    setStep("search");
+    setSelectedCampaign(null);
+    setTimeout(() => searchInputRef.current?.focus(), 50);
+  };
+
+  // Render flat list with proper indices
+  const renderItems = () => {
+    const items: React.ReactNode[] = [];
+    let currentIndex = 0;
+
+    for (const fc of filteredCampaigns) {
+      const campaignIndex = currentIndex;
+      items.push(
+        <button
+          key={`campaign-${fc.campaign.source}:${fc.campaign.campaign}`}
+          data-item
+          className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${
+            campaignIndex === highlightedIndex ? "bg-accent" : "hover:bg-accent/50"
+          }`}
+          onClick={() => handleCampaignSelect(fc.campaign)}
+          onMouseEnter={() => setHighlightedIndex(campaignIndex)}
+        >
+          <Badge
+            variant="secondary"
+            className={`shrink-0 ${getSourceColor(fc.campaign.source)}`}
+          >
+            {fc.campaign.sourceLabel}
+          </Badge>
+          <span className="flex-1 truncate text-sm font-medium">
+            {fc.campaign.campaign}
+          </span>
+          <span className="text-xs text-muted-foreground shrink-0">
+            {formatSpend(fc.campaign.totalSpend)}
+          </span>
+          {fc.campaign.adsets.length > 0 && (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+      );
+      currentIndex++;
+
+      // Render adsets
+      for (const adset of fc.matchedAdsets) {
+        const adsetIndex = currentIndex;
+        items.push(
+          <button
+            key={`adset-${fc.campaign.source}:${fc.campaign.campaign}:${adset.adsetId}`}
+            data-item
+            className={`w-full flex items-center gap-3 p-2.5 pl-12 rounded-lg text-left transition-colors ${
+              adsetIndex === highlightedIndex ? "bg-accent" : "hover:bg-accent/50"
+            }`}
+            onClick={() => handleAdsetSelect(fc.campaign, adset)}
+            onMouseEnter={() => setHighlightedIndex(adsetIndex)}
+          >
+            <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="flex-1 truncate text-sm text-muted-foreground">
+              {adset.adsetName}
+            </span>
+            <span className="text-xs text-muted-foreground/70 shrink-0">
+              {formatSpend(adset.totalSpend)}
+            </span>
+          </button>
+        );
+        currentIndex++;
+      }
     }
+
+    return items;
   };
 
   return (
@@ -329,12 +448,11 @@ export function CampaignLinkingDialog({
             <DialogTitle>
               {step === "search" && "Koble annonsekampanje"}
               {step === "connection-type" && "Velg koblingstype"}
-              {step === "adset-select" && "Velg annonsesett"}
             </DialogTitle>
           </div>
           {step === "search" && (
             <p className="text-sm text-muted-foreground mt-1">
-              Koble en kampanje til {stopName}
+              Koble en kampanje eller annonsesett til {stopName}
             </p>
           )}
         </DialogHeader>
@@ -347,7 +465,7 @@ export function CampaignLinkingDialog({
               <Input
                 ref={searchInputRef}
                 type="text"
-                placeholder="Sok etter kampanjer..."
+                placeholder="Sok etter kampanjer eller annonsesett..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
@@ -382,9 +500,9 @@ export function CampaignLinkingDialog({
               </div>
             )}
 
-            {/* Campaign list */}
+            {/* Campaign list with nested adsets */}
             <ScrollArea className="mt-4 h-[350px] -mx-1 px-1">
-              <div ref={listRef} className="space-y-1">
+              <div ref={listRef} className="space-y-0.5">
                 {loading ? (
                   <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
                     Laster kampanjer...
@@ -404,32 +522,7 @@ export function CampaignLinkingDialog({
                     )}
                   </div>
                 ) : (
-                  filteredCampaigns.map((campaign, index) => (
-                    <button
-                      key={`${campaign.source}:${campaign.campaign}`}
-                      data-campaign-item
-                      className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${
-                        index === highlightedIndex
-                          ? "bg-accent"
-                          : "hover:bg-accent/50"
-                      }`}
-                      onClick={() => handleCampaignSelect(campaign)}
-                      onMouseEnter={() => setHighlightedIndex(index)}
-                    >
-                      <Badge
-                        variant="secondary"
-                        className={`shrink-0 ${getSourceColor(campaign.source)}`}
-                      >
-                        {campaign.sourceLabel}
-                      </Badge>
-                      <span className="flex-1 truncate text-sm font-medium">
-                        {campaign.campaign}
-                      </span>
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {formatSpend(campaign.totalSpend)}
-                      </span>
-                    </button>
-                  ))
+                  renderItems()
                 )}
               </div>
             </ScrollArea>
@@ -485,64 +578,10 @@ export function CampaignLinkingDialog({
                 <Layers className="h-6 w-6 mb-2 text-primary" />
                 <div className="font-medium text-sm">Annonsesett</div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  {adsetDisabledReason || "Velg spesifikke annonsesett"}
+                  {adsetDisabledReason || `Velg blant ${selectedCampaign.adsets.length} annonsesett`}
                 </div>
               </button>
             </div>
-
-            {saving && (
-              <div className="mt-4 text-center text-sm text-muted-foreground">
-                Kobler...
-              </div>
-            )}
-          </div>
-        )}
-
-        {step === "adset-select" && selectedCampaign && (
-          <div className="px-6 pb-6">
-            <div className="mb-4 p-3 bg-muted/50 rounded-lg">
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant="secondary"
-                  className={getSourceColor(selectedCampaign.source)}
-                >
-                  {selectedCampaign.sourceLabel}
-                </Badge>
-                <span className="text-sm font-medium truncate">
-                  {selectedCampaign.campaign}
-                </span>
-              </div>
-            </div>
-
-            <ScrollArea className="h-[300px] -mx-1 px-1">
-              <div className="space-y-1">
-                {loadingAdsets ? (
-                  <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-                    Laster annonsesett...
-                  </div>
-                ) : adsets.length === 0 ? (
-                  <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-                    Ingen annonsesett funnet
-                  </div>
-                ) : (
-                  adsets.map((adset) => (
-                    <button
-                      key={adset.adsetId}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors hover:bg-accent/50"
-                      onClick={() => handleAdsetSelect(adset.adsetId)}
-                      disabled={saving}
-                    >
-                      <span className="flex-1 truncate text-sm font-medium">
-                        {adset.adsetName}
-                      </span>
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {formatSpend(adset.totalSpend)}
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-            </ScrollArea>
 
             {saving && (
               <div className="mt-4 text-center text-sm text-muted-foreground">

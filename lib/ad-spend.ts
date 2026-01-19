@@ -268,6 +268,20 @@ export interface FlatCampaign {
   totalSpend: number;
 }
 
+export interface CampaignAdset {
+  adsetId: string;
+  adsetName: string;
+  totalSpend: number;
+}
+
+export interface CampaignWithAdsets {
+  source: string;
+  sourceLabel: string;
+  campaign: string;
+  totalSpend: number;
+  adsets: CampaignAdset[];
+}
+
 /**
  * Get all campaigns across all sources in a flat list for search
  */
@@ -297,6 +311,67 @@ export async function getAllCampaignsFlat(
       sourceLabel: getSourceLabel(source),
       campaign,
       totalSpend: spend,
+    }))
+    .sort((a, b) => b.totalSpend - a.totalSpend);
+}
+
+/**
+ * Get all campaigns with their ad sets for hierarchical display
+ */
+export async function getAllCampaignsWithAdsets(
+  supabase: SupabaseClient
+): Promise<CampaignWithAdsets[]> {
+  const { data } = await supabase
+    .from('facebook_ads')
+    .select('source, campaign, adset_id, adset_name, spend');
+
+  if (!data) return [];
+
+  // Build campaign -> adsets structure
+  const campaigns = new Map<string, {
+    source: string;
+    campaign: string;
+    totalSpend: number;
+    adsets: Map<string, { name: string; spend: number }>;
+  }>();
+
+  for (const row of data) {
+    const key = `${row.source}:${row.campaign}`;
+    const current = campaigns.get(key) || {
+      source: row.source,
+      campaign: row.campaign,
+      totalSpend: 0,
+      adsets: new Map(),
+    };
+
+    current.totalSpend += Number(row.spend);
+
+    // Add to adset if adset_id exists
+    if (row.adset_id) {
+      const adset = current.adsets.get(row.adset_id) || {
+        name: row.adset_name || row.adset_id,
+        spend: 0,
+      };
+      adset.spend += Number(row.spend);
+      current.adsets.set(row.adset_id, adset);
+    }
+
+    campaigns.set(key, current);
+  }
+
+  return Array.from(campaigns.values())
+    .map(({ source, campaign, totalSpend, adsets }) => ({
+      source,
+      sourceLabel: getSourceLabel(source),
+      campaign,
+      totalSpend,
+      adsets: Array.from(adsets.entries())
+        .map(([adsetId, { name, spend }]) => ({
+          adsetId,
+          adsetName: name,
+          totalSpend: spend,
+        }))
+        .sort((a, b) => b.totalSpend - a.totalSpend),
     }))
     .sort((a, b) => b.totalSpend - a.totalSpend);
 }

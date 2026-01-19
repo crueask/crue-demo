@@ -101,101 +101,130 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     setProject(projectData);
     setEditProjectName(projectData.name);
 
-    // Get stops with shows and ticket data
+    // Get stops
     const { data: stopsData } = await supabase
       .from("stops")
       .select("*")
       .eq("project_id", id)
       .order("created_at", { ascending: false });
 
-    if (stopsData) {
-      const stopsWithShows = await Promise.all(
-        stopsData.map(async (stop) => {
-          // Get shows for this stop
-          const { data: showsData } = await supabase
-            .from("shows")
-            .select("*")
-            .eq("stop_id", stop.id)
-            .order("date", { ascending: true });
-
-          const showsWithTickets = showsData
-            ? await Promise.all(
-                showsData.map(async (show) => {
-                  // Get the LATEST ticket snapshot for this show (not sum of all)
-                  const { data: latestTicket } = await supabase
-                    .from("tickets")
-                    .select("quantity_sold, revenue")
-                    .eq("show_id", show.id)
-                    .order("sale_date", { ascending: false, nullsFirst: false })
-                    .order("reported_at", { ascending: false })
-                    .limit(1)
-                    .single();
-
-                  return {
-                    ...show,
-                    tickets_sold: latestTicket?.quantity_sold || 0,
-                    revenue: latestTicket ? Number(latestTicket.revenue) : 0,
-                  };
-                })
-              )
-            : [];
-
-          // Check for ad connections
-          const { data: adConnections } = await supabase
-            .from("stop_ad_connections")
-            .select("id")
-            .eq("stop_id", stop.id)
-            .limit(1);
-
-          return {
-            ...stop,
-            shows: showsWithTickets,
-            hasAdConnections: (adConnections?.length || 0) > 0,
-          };
-        })
-      );
-
-      // Sort stops by first upcoming show date
-      const today = new Date().toISOString().split("T")[0];
-      const sortedStops = [...stopsWithShows].sort((a, b) => {
-        // Find the first upcoming show for each stop
-        const aUpcoming = a.shows
-          .filter((s: Show) => s.date >= today)
-          .sort((s1: Show, s2: Show) => s1.date.localeCompare(s2.date) || (s1.time || "").localeCompare(s2.time || ""))[0];
-        const bUpcoming = b.shows
-          .filter((s: Show) => s.date >= today)
-          .sort((s1: Show, s2: Show) => s1.date.localeCompare(s2.date) || (s1.time || "").localeCompare(s2.time || ""))[0];
-
-        // If both have upcoming shows, sort by first upcoming date
-        if (aUpcoming && bUpcoming) {
-          const dateCompare = aUpcoming.date.localeCompare(bUpcoming.date);
-          if (dateCompare !== 0) return dateCompare;
-          return (aUpcoming.time || "").localeCompare(bUpcoming.time || "");
-        }
-        // Stops with upcoming shows come first
-        if (aUpcoming && !bUpcoming) return -1;
-        if (!aUpcoming && bUpcoming) return 1;
-        // Both have no upcoming shows - sort by most recent past show
-        const aLast = [...a.shows].sort((s1: Show, s2: Show) => s2.date.localeCompare(s1.date))[0];
-        const bLast = [...b.shows].sort((s1: Show, s2: Show) => s2.date.localeCompare(s1.date))[0];
-        if (aLast && bLast) {
-          return bLast.date.localeCompare(aLast.date);
-        }
-        return 0;
-      });
-
-      // Sort shows within each stop by date and time
-      for (const stop of sortedStops) {
-        stop.shows.sort((a: Show, b: Show) => {
-          const dateCompare = a.date.localeCompare(b.date);
-          if (dateCompare !== 0) return dateCompare;
-          return (a.time || "").localeCompare(b.time || "");
-        });
-      }
-
-      setStops(sortedStops);
+    if (!stopsData || stopsData.length === 0) {
+      setStops([]);
+      setLoading(false);
+      return;
     }
 
+    const stopIds = stopsData.map((s) => s.id);
+
+    // Batch fetch all shows for all stops in ONE query
+    const { data: allShows } = await supabase
+      .from("shows")
+      .select("*")
+      .in("stop_id", stopIds)
+      .order("date", { ascending: true });
+
+    // Batch fetch all ad connections for all stops in ONE query
+    const { data: allAdConnections } = await supabase
+      .from("stop_ad_connections")
+      .select("stop_id")
+      .in("stop_id", stopIds);
+
+    // Create a Set of stop IDs that have ad connections
+    const stopsWithAdConnections = new Set(
+      (allAdConnections || []).map((ac) => ac.stop_id)
+    );
+
+    // Group shows by stop_id
+    const showsByStop: Record<string, typeof allShows> = {};
+    const allShowIds: string[] = [];
+    for (const show of allShows || []) {
+      if (!showsByStop[show.stop_id]) {
+        showsByStop[show.stop_id] = [];
+      }
+      showsByStop[show.stop_id]!.push(show);
+      allShowIds.push(show.id);
+    }
+
+    // Batch fetch all tickets for all shows in ONE query
+    // We need the latest ticket per show, so we fetch all and process in JS
+    const { data: allTickets } = allShowIds.length > 0
+      ? await supabase
+          .from("tickets")
+          .select("show_id, quantity_sold, revenue, sale_date, reported_at")
+          .in("show_id", allShowIds)
+          .order("sale_date", { ascending: false, nullsFirst: false })
+          .order("reported_at", { ascending: false })
+      : { data: [] };
+
+    // Get the latest ticket per show (first one in sorted order for each show_id)
+    const latestTicketByShow: Record<string, { quantity_sold: number; revenue: number }> = {};
+    for (const ticket of allTickets || []) {
+      // Only keep the first (latest) ticket for each show
+      if (!latestTicketByShow[ticket.show_id]) {
+        latestTicketByShow[ticket.show_id] = {
+          quantity_sold: ticket.quantity_sold,
+          revenue: Number(ticket.revenue),
+        };
+      }
+    }
+
+    // Build stops with shows data
+    const stopsWithShows: Stop[] = stopsData.map((stop) => {
+      const shows = (showsByStop[stop.id] || []).map((show) => {
+        const latestTicket = latestTicketByShow[show.id];
+        return {
+          ...show,
+          tickets_sold: latestTicket?.quantity_sold || 0,
+          revenue: latestTicket?.revenue || 0,
+        };
+      });
+
+      return {
+        ...stop,
+        shows,
+        hasAdConnections: stopsWithAdConnections.has(stop.id),
+      };
+    });
+
+    // Sort stops by first upcoming show date
+    const today = new Date().toISOString().split("T")[0];
+    const sortedStops = [...stopsWithShows].sort((a, b) => {
+      // Find the first upcoming show for each stop
+      const aUpcoming = a.shows
+        .filter((s: Show) => s.date >= today)
+        .sort((s1: Show, s2: Show) => s1.date.localeCompare(s2.date) || (s1.time || "").localeCompare(s2.time || ""))[0];
+      const bUpcoming = b.shows
+        .filter((s: Show) => s.date >= today)
+        .sort((s1: Show, s2: Show) => s1.date.localeCompare(s2.date) || (s1.time || "").localeCompare(s2.time || ""))[0];
+
+      // If both have upcoming shows, sort by first upcoming date
+      if (aUpcoming && bUpcoming) {
+        const dateCompare = aUpcoming.date.localeCompare(bUpcoming.date);
+        if (dateCompare !== 0) return dateCompare;
+        return (aUpcoming.time || "").localeCompare(bUpcoming.time || "");
+      }
+      // Stops with upcoming shows come first
+      if (aUpcoming && !bUpcoming) return -1;
+      if (!aUpcoming && bUpcoming) return 1;
+      // Both have no upcoming shows - sort by most recent past show
+      const aLast = [...a.shows].sort((s1: Show, s2: Show) => s2.date.localeCompare(s1.date))[0];
+      const bLast = [...b.shows].sort((s1: Show, s2: Show) => s2.date.localeCompare(s1.date))[0];
+      if (aLast && bLast) {
+        return bLast.date.localeCompare(aLast.date);
+      }
+      return 0;
+    });
+
+    // Sort shows within each stop by date and time
+    for (const stop of sortedStops) {
+      stop.shows.sort((a: Show, b: Show) => {
+        const dateCompare = a.date.localeCompare(b.date);
+        if (dateCompare !== 0) return dateCompare;
+        return (a.time || "").localeCompare(b.time || "");
+      });
+    }
+
+    setStops(sortedStops);
     setLoading(false);
   }
 
