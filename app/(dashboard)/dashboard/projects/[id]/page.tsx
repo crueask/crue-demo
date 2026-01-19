@@ -340,6 +340,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       {/* Ticket sales chart by stop */}
       {stops.length > 0 && (
         <ProjectChartSection
+          projectId={id}
           stops={stops.map((s) => ({
             id: s.id,
             name: s.name,

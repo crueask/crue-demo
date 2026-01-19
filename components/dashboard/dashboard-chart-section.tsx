@@ -21,6 +21,7 @@ import {
   addDays,
   daysBetween,
 } from "@/lib/chart-utils";
+import { getTotalAdSpend, applyMva } from "@/lib/ad-spend";
 
 interface Project {
   id: string;
@@ -34,6 +35,7 @@ interface DashboardChartSectionProps {
 export function DashboardChartSection({ initialProjects }: DashboardChartSectionProps) {
   const [projects] = useState<Project[]>(initialProjects);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [adSpendData, setAdSpendData] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   // Chart settings state
@@ -321,6 +323,19 @@ export function DashboardChartSection({ initialProjects }: DashboardChartSection
     }
 
     setChartData(formattedData);
+
+    // Fetch ad spend if enabled
+    if (prefs.showAdSpend) {
+      const adSpend = await getTotalAdSpend(supabase, projectIds, startDate, endDate);
+      // Apply MVA if needed
+      const adjustedSpend = Object.fromEntries(
+        Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, prefs.includeMva)])
+      );
+      setAdSpendData(adjustedSpend);
+    } else {
+      setAdSpendData({});
+    }
+
     setLoading(false);
   }, [projects, prefs, selectedEntities]);
 
@@ -349,6 +364,14 @@ export function DashboardChartSection({ initialProjects }: DashboardChartSection
 
   const handleDistributionWeightChange = (weight: DistributionWeight) => {
     updatePrefs({ distributionWeight: weight });
+  };
+
+  const handleShowAdSpendChange = (show: boolean) => {
+    updatePrefs({ showAdSpend: show });
+  };
+
+  const handleIncludeMvaChange = (include: boolean) => {
+    updatePrefs({ includeMva: include });
   };
 
   // Build entity list for filter
@@ -392,6 +415,10 @@ export function DashboardChartSection({ initialProjects }: DashboardChartSection
           onShowEstimationsChange={handleShowEstimationsChange}
           distributionWeight={prefs.distributionWeight}
           onDistributionWeightChange={handleDistributionWeightChange}
+          showAdSpend={prefs.showAdSpend}
+          onShowAdSpendChange={handleShowAdSpendChange}
+          includeMva={prefs.includeMva}
+          onIncludeMvaChange={handleIncludeMvaChange}
         />
       </div>
 
@@ -407,6 +434,8 @@ export function DashboardChartSection({ initialProjects }: DashboardChartSection
           isCumulative={isCumulative}
           isRevenue={isRevenue}
           hideHeader
+          adSpendData={prefs.showAdSpend ? adSpendData : undefined}
+          includeMva={prefs.includeMva}
         />
       )}
     </div>

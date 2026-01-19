@@ -31,6 +31,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { TicketsChart } from "@/components/project/tickets-chart";
+import { StopAdConnections } from "@/components/project/stop-ad-connections";
 
 interface Ticket {
   id: string;
@@ -742,6 +743,13 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
               )}
             </div>
           )}
+
+          {/* Ad Connections Section */}
+          <StopAdConnections
+            stopId={stop.id}
+            stopName={stop.name}
+            onDataChange={onDataChange}
+          />
 
           {/* Shows list */}
           <div className="space-y-2">

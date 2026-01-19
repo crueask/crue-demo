@@ -62,6 +62,12 @@ interface ChartSettingsProps {
   distributionWeight: DistributionWeight;
   onDistributionWeightChange: (weight: DistributionWeight) => void;
 
+  // Ad spend settings (optional - only shown when provided)
+  showAdSpend?: boolean;
+  onShowAdSpendChange?: (show: boolean) => void;
+  includeMva?: boolean;
+  onIncludeMvaChange?: (include: boolean) => void;
+
   // Optional: hide certain controls
   hideMetricSelector?: boolean;
   hideEntityFilter?: boolean;
@@ -81,6 +87,10 @@ export function ChartSettings({
   onShowEstimationsChange,
   distributionWeight,
   onDistributionWeightChange,
+  showAdSpend,
+  onShowAdSpendChange,
+  includeMva,
+  onIncludeMvaChange,
   hideMetricSelector,
   hideEntityFilter,
 }: ChartSettingsProps) {
@@ -363,6 +373,33 @@ export function ChartSettings({
               {getDistributionLabel('late')}
             </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
+
+          {/* Ad spend settings - only show if callbacks provided */}
+          {onShowAdSpendChange && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs text-gray-500">Annonsekostnad</DropdownMenuLabel>
+              <DropdownMenuCheckboxItem
+                checked={showAdSpend}
+                onCheckedChange={onShowAdSpendChange}
+              >
+                Vis annonsekostnad
+              </DropdownMenuCheckboxItem>
+              {showAdSpend && onIncludeMvaChange && (
+                <DropdownMenuRadioGroup
+                  value={includeMva ? 'inkl' : 'eks'}
+                  onValueChange={(v) => onIncludeMvaChange(v === 'inkl')}
+                >
+                  <DropdownMenuRadioItem value="eks">
+                    Eks. mva (fra Meta)
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="inkl">
+                    Inkl. mva (+25%)
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              )}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

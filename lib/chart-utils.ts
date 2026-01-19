@@ -23,6 +23,8 @@ export interface ChartPreferences {
   metric: MetricType;
   showEstimations: boolean;
   distributionWeight: DistributionWeight;
+  showAdSpend: boolean;
+  includeMva: boolean;
 }
 
 const CHART_PREFS_KEY = 'crue_chart_preferences';
@@ -32,6 +34,8 @@ export const defaultChartPreferences: ChartPreferences = {
   metric: 'tickets_daily',
   showEstimations: true,
   distributionWeight: 'even',
+  showAdSpend: true,
+  includeMva: false,
 };
 
 /**

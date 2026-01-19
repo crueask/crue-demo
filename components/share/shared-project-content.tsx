@@ -25,11 +25,12 @@ interface Stop {
 }
 
 interface SharedProjectContentProps {
+  projectId: string;
   projectName: string;
   stops: Stop[];
 }
 
-export function SharedProjectContent({ projectName, stops }: SharedProjectContentProps) {
+export function SharedProjectContent({ projectId, projectName, stops }: SharedProjectContentProps) {
   // Calculate totals
   const totalShows = stops.reduce((sum, stop) => sum + stop.shows.length, 0);
   const totalTicketsSold = stops.reduce(
@@ -100,6 +101,7 @@ export function SharedProjectContent({ projectName, stops }: SharedProjectConten
         {stops.length > 0 && (
           <div className="mb-8">
             <ProjectChartSection
+              projectId={projectId}
               stops={stops.map((s) => ({
                 id: s.id,
                 name: s.name,

@@ -23,6 +23,7 @@ import {
   addDays,
   daysBetween,
 } from "@/lib/chart-utils";
+import { getProjectAdSpend, applyMva } from "@/lib/ad-spend";
 
 interface Show {
   id: string;
@@ -38,11 +39,13 @@ interface Stop {
 }
 
 interface ProjectChartSectionProps {
+  projectId: string;
   stops: Stop[];
 }
 
-export function ProjectChartSection({ stops }: ProjectChartSectionProps) {
+export function ProjectChartSection({ projectId, stops }: ProjectChartSectionProps) {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [adSpendData, setAdSpendData] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   // Chart settings state
@@ -387,8 +390,21 @@ export function ProjectChartSection({ stops }: ProjectChartSectionProps) {
     }
 
     setChartData(formattedData);
+
+    // Fetch ad spend if enabled
+    if (prefs.showAdSpend) {
+      const adSpend = await getProjectAdSpend(supabase, projectId, startDate, endDate);
+      // Apply MVA if needed
+      const adjustedSpend = Object.fromEntries(
+        Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, prefs.includeMva)])
+      );
+      setAdSpendData(adjustedSpend);
+    } else {
+      setAdSpendData({});
+    }
+
     setLoading(false);
-  }, [stops, prefs, selectedEntities]);
+  }, [projectId, stops, prefs, selectedEntities]);
 
   useEffect(() => {
     fetchChartData();
@@ -415,6 +431,14 @@ export function ProjectChartSection({ stops }: ProjectChartSectionProps) {
 
   const handleDistributionWeightChange = (weight: DistributionWeight) => {
     updatePrefs({ distributionWeight: weight });
+  };
+
+  const handleShowAdSpendChange = (show: boolean) => {
+    updatePrefs({ showAdSpend: show });
+  };
+
+  const handleIncludeMvaChange = (include: boolean) => {
+    updatePrefs({ includeMva: include });
   };
 
   // Build entity list for filter (stops with nested shows)
@@ -491,6 +515,10 @@ export function ProjectChartSection({ stops }: ProjectChartSectionProps) {
           onShowEstimationsChange={handleShowEstimationsChange}
           distributionWeight={prefs.distributionWeight}
           onDistributionWeightChange={handleDistributionWeightChange}
+          showAdSpend={prefs.showAdSpend}
+          onShowAdSpendChange={handleShowAdSpendChange}
+          includeMva={prefs.includeMva}
+          onIncludeMvaChange={handleIncludeMvaChange}
         />
       </div>
 
@@ -506,6 +534,8 @@ export function ProjectChartSection({ stops }: ProjectChartSectionProps) {
           showEstimations={prefs.showEstimations}
           isCumulative={isCumulative}
           isRevenue={isRevenue}
+          adSpendData={prefs.showAdSpend ? adSpendData : undefined}
+          includeMva={prefs.includeMva}
         />
       )}
     </div>

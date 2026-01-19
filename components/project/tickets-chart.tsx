@@ -5,7 +5,7 @@ import {
   ChartContainer,
   ChartTooltip,
 } from "@/components/ui/chart";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ReferenceLine } from "recharts";
+import { Bar, ComposedChart, Line, CartesianGrid, XAxis, YAxis, ReferenceLine } from "recharts";
 import { type MissingStop } from "@/lib/chart-utils";
 
 interface TicketsChartProps {
@@ -23,6 +23,8 @@ interface TicketsChartProps {
   showEstimations?: boolean;
   isCumulative?: boolean;
   isRevenue?: boolean;
+  adSpendData?: Record<string, number>;
+  includeMva?: boolean;
 }
 
 // Color palette for entities - using distinct colors
@@ -36,6 +38,9 @@ const ENTITY_COLORS = [
   "#06B6D4", // cyan
   "#F97316", // orange
 ];
+
+// Ad spend line color
+const AD_SPEND_COLOR = "#9333EA"; // purple-600
 
 // Check if there's any estimated data in the dataset
 function hasEstimatedData(data: Array<{ [key: string]: string | number | MissingStop[] | undefined }>, entities: Array<{ id: string }>): boolean {
@@ -55,6 +60,8 @@ export function TicketsChart({
   showEstimations = true,
   isCumulative = false,
   isRevenue = false,
+  adSpendData,
+  includeMva = false,
 }: TicketsChartProps) {
   // Build chart config dynamically based on entities
   const chartConfig = entities.reduce((acc, entity, index) => {
@@ -103,6 +110,20 @@ export function TicketsChart({
     return null;
   }
 
+  // Merge ad spend data into chart data
+  const dataWithAdSpend = data.map(day => {
+    const adSpend = adSpendData ? (adSpendData[day.date] || 0) : 0;
+    return { ...day, adSpend };
+  });
+
+  // Check if we have any ad spend data to show
+  const hasAdSpendData = adSpendData && Object.values(adSpendData).some(v => v > 0);
+
+  // Calculate max ad spend for Y-axis scaling
+  const maxAdSpend = hasAdSpendData
+    ? Math.max(...Object.values(adSpendData || {}))
+    : 0;
+
   // Check if we have any estimated data to show
   const showEstimatedLegend = showEstimations && hasEstimatedData(data, entities);
 
@@ -114,9 +135,9 @@ export function TicketsChart({
         </h3>
       )}
       <ChartContainer config={chartConfig} className={`w-full`} style={{ height }}>
-        <BarChart
-          data={data}
-          margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
+        <ComposedChart
+          data={dataWithAdSpend}
+          margin={{ top: 10, right: hasAdSpendData ? 50 : 0, left: 0, bottom: 0 }}
         >
           {/* SVG pattern definitions for estimated (striped) bars */}
           <defs>
@@ -155,6 +176,7 @@ export function TicketsChart({
             tickFormatter={formatDate}
           />
           <YAxis
+            yAxisId="primary"
             tickLine={false}
             axisLine={false}
             tickMargin={8}
@@ -162,7 +184,20 @@ export function TicketsChart({
             tickFormatter={isRevenue ? formatCurrency : formatNumber}
             width={isRevenue ? 50 : 40}
           />
-          <ReferenceLine y={0} stroke="#E5E7EB" />
+          {hasAdSpendData && (
+            <YAxis
+              yAxisId="adSpend"
+              orientation="right"
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              tick={{ fontSize: 10, fill: AD_SPEND_COLOR }}
+              tickFormatter={formatCurrency}
+              domain={[0, maxAdSpend * 1.1]}
+              width={45}
+            />
+          )}
+          <ReferenceLine y={0} stroke="#E5E7EB" yAxisId="primary" />
           <ChartTooltip
             wrapperStyle={{ zIndex: 9999 }}
             content={({ active, payload, label }) => {
@@ -174,9 +209,17 @@ export function TicketsChart({
 
               // Group data by entity (combining actual + estimated)
               const entityData: Record<string, { actual: number; estimated: number; color: string; name: string }> = {};
+              let adSpendValue = 0;
 
               for (const entry of payload) {
                 const key = String(entry.dataKey);
+
+                // Handle ad spend separately
+                if (key === 'adSpend') {
+                  adSpendValue = Number(entry.value) || 0;
+                  continue;
+                }
+
                 const isEstimated = key.endsWith('_estimated');
                 const entityId = isEstimated ? key.replace('_estimated', '') : key;
                 const entityIndex = entities.findIndex(e => e.id === entityId);
@@ -245,6 +288,23 @@ export function TicketsChart({
                         </div>
                       );
                     })}
+                    {/* Ad spend in tooltip */}
+                    {adSpendValue > 0 && (
+                      <div className="flex items-center justify-between gap-4 pt-1.5 mt-1.5 border-t border-gray-100">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-2.5 h-0.5 flex-shrink-0"
+                            style={{ backgroundColor: AD_SPEND_COLOR }}
+                          />
+                          <span className="text-sm text-gray-600">
+                            Annonsekostnad{includeMva ? '' : ' (eks. mva)'}
+                          </span>
+                        </div>
+                        <span className="text-sm font-semibold" style={{ color: AD_SPEND_COLOR }}>
+                          {formatCurrency(adSpendValue)} kr
+                        </span>
+                      </div>
+                    )}
                   </div>
                   {/* Missing reports section */}
                   {missingStops.length > 0 && (
@@ -271,6 +331,7 @@ export function TicketsChart({
               key={`${entity.id}_estimated`}
               dataKey={`${entity.id}_estimated`}
               stackId="tickets"
+              yAxisId="primary"
               fill={`url(#stripe-${entity.id})`}
               radius={[0, 0, 0, 0]}
             />
@@ -281,15 +342,28 @@ export function TicketsChart({
               key={entity.id}
               dataKey={entity.id}
               stackId="tickets"
+              yAxisId="primary"
               fill={ENTITY_COLORS[index % ENTITY_COLORS.length]}
               radius={index === entities.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
             />
           ))}
-        </BarChart>
+          {/* Ad spend line */}
+          {hasAdSpendData && (
+            <Line
+              type="monotone"
+              dataKey="adSpend"
+              yAxisId="adSpend"
+              stroke={AD_SPEND_COLOR}
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4, fill: AD_SPEND_COLOR }}
+            />
+          )}
+        </ComposedChart>
       </ChartContainer>
 
       {/* Legend */}
-      {(entities.length > 1 || showEstimatedLegend) && (
+      {(entities.length > 1 || showEstimatedLegend || hasAdSpendData) && (
         <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-gray-100">
           {entities.length > 1 && entities.map((entity, index) => (
             <div key={entity.id} className="flex items-center gap-1.5">
@@ -311,6 +385,18 @@ export function TicketsChart({
                 }}
               />
               <span className="text-xs text-gray-500 italic">Estimert</span>
+            </div>
+          )}
+          {/* Ad spend indicator */}
+          {hasAdSpendData && (
+            <div className="flex items-center gap-1.5 ml-2 pl-3 border-l border-gray-200">
+              <div
+                className="w-2.5 h-0.5"
+                style={{ backgroundColor: AD_SPEND_COLOR }}
+              />
+              <span className="text-xs" style={{ color: AD_SPEND_COLOR }}>
+                Annonsekostnad{includeMva ? ' (inkl. mva)' : ' (eks. mva)'}
+              </span>
             </div>
           )}
         </div>
