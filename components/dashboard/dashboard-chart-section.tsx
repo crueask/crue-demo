@@ -197,6 +197,7 @@ export function DashboardChartSection({ initialProjects }: DashboardChartSection
       let previousDate: string | null = salesStartDate;
       let previousValue = 0;
       let hasBaseline = !!salesStartDate;
+      let previousDateIsSalesStart = !!salesStartDate; // Track if previousDate came from salesStartDate vs a report
 
       for (let i = 0; i < sortedTickets.length; i++) {
         const ticket = sortedTickets[i];
@@ -210,12 +211,14 @@ export function DashboardChartSection({ initialProjects }: DashboardChartSection
           previousValue = currentValue;
           previousDate = ticketDate;
           hasBaseline = true;
+          previousDateIsSalesStart = false; // This date came from a report, not salesStartDate
           continue;
         }
 
         if (delta <= 0) {
           previousValue = currentValue;
           previousDate = ticketDate;
+          previousDateIsSalesStart = false;
           continue;
         }
 
@@ -229,7 +232,10 @@ export function DashboardChartSection({ initialProjects }: DashboardChartSection
             isEstimated: false,
           });
         } else {
-          const totalDays = daysBetween(previousDate!, ticketDate) + 1;
+          // If previousDate came from a report (not salesStartDate), start distribution from day after
+          // because the report date's sales are already accounted for in the cumulative total
+          const distributionStartDate = previousDateIsSalesStart ? previousDate! : addDays(previousDate!, 1);
+          const totalDays = daysBetween(distributionStartDate, ticketDate) + 1;
 
           if (totalDays <= 1) {
             distributedData.push({
@@ -242,7 +248,7 @@ export function DashboardChartSection({ initialProjects }: DashboardChartSection
             const distributed = distributeValues(delta, totalDays, prefs.distributionWeight);
 
             for (let j = 0; j < totalDays; j++) {
-              const date = addDays(previousDate!, j);
+              const date = addDays(distributionStartDate, j);
               const isLastDay = j === totalDays - 1;
               distributedData.push({
                 date,
@@ -256,6 +262,7 @@ export function DashboardChartSection({ initialProjects }: DashboardChartSection
 
         previousValue = currentValue;
         previousDate = ticketDate;
+        previousDateIsSalesStart = false; // From now on, previousDate is always a report date
       }
     }
 
