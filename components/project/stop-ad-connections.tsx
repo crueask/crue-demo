@@ -126,9 +126,9 @@ export function StopAdConnections({
       if (data) {
         shared[key] = data
           .filter((row: { stop_id: string }) => row.stop_id !== stopId)
-          .map((row: { stop_id: string; allocation_percent: number; stops: { name: string } }) => ({
+          .map((row: { stop_id: string; allocation_percent: number; stops: { name: string }[] }) => ({
             stopId: row.stop_id,
-            stopName: row.stops.name,
+            stopName: row.stops[0]?.name || "Ukjent",
             allocationPercent: Number(row.allocation_percent),
           }));
       }
