@@ -290,7 +290,7 @@ export function TicketsChart({
                         </div>
                       );
                     })}
-                    {/* Ad spend in tooltip */}
+                    {/* Revenue and Ad spend in tooltip */}
                     {adSpendValue > 0 && (() => {
                       // Get daily revenue - either from revenueData prop or from grandTotal if displaying revenue
                       const dailyRevenue = revenueData?.[label] ?? (isRevenue ? grandTotal : 0);
@@ -302,7 +302,15 @@ export function TicketsChart({
 
                       return (
                         <>
+                          {/* Billettomsetning (ticket revenue) */}
                           <div className="flex items-center justify-between gap-4 pt-1.5 mt-1.5 border-t border-gray-100">
+                            <span className="text-sm text-gray-600">Billettomsetning</span>
+                            <span className="text-sm font-semibold text-blue-600">
+                              {formatCurrency(dailyRevenue)} kr
+                            </span>
+                          </div>
+                          {/* Annonsekostnad (ad spend) */}
+                          <div className="flex items-center justify-between gap-4">
                             <div className="flex items-center gap-2">
                               <div
                                 className="w-2.5 h-0.5 flex-shrink-0"

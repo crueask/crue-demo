@@ -30,22 +30,31 @@ interface Project {
 
 interface DashboardChartSectionProps {
   initialProjects: Project[];
+  initialChartData?: ChartDataPoint[];
 }
 
-export function DashboardChartSection({ initialProjects }: DashboardChartSectionProps) {
+export function DashboardChartSection({ initialProjects, initialChartData }: DashboardChartSectionProps) {
   const [projects] = useState<Project[]>(initialProjects);
-  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [chartData, setChartData] = useState<ChartDataPoint[]>(initialChartData || []);
   const [adSpendData, setAdSpendData] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
+  // Start with no loading if we have initial data
+  const [loading, setLoading] = useState(!initialChartData);
+  // Track if user has changed preferences from defaults
+  const [prefsChanged, setPrefsChanged] = useState(false);
 
   // Chart settings state
   const [prefs, setPrefs] = useState<ChartPreferences>(defaultChartPreferences);
   const [selectedEntities, setSelectedEntities] = useState<string[]>(['all']);
 
-  // Load preferences on mount
+  // Load preferences on mount and check if they differ from defaults
   useEffect(() => {
     const saved = loadChartPreferences();
     setPrefs(saved);
+    // Check if saved preferences require fetching fresh data
+    const needsFetch = saved.dateRange !== 'last14days' ||
+      saved.metric !== 'tickets_daily' ||
+      saved.showAdSpend;
+    setPrefsChanged(needsFetch);
   }, []);
 
   // Fetch chart data when settings change
@@ -339,15 +348,20 @@ export function DashboardChartSection({ initialProjects }: DashboardChartSection
     setLoading(false);
   }, [projects, prefs, selectedEntities]);
 
+  // Only fetch if we don't have initial data OR if preferences changed from defaults
   useEffect(() => {
-    fetchChartData();
-  }, [fetchChartData]);
+    if (!initialChartData || prefsChanged) {
+      fetchChartData();
+    }
+  }, [fetchChartData, initialChartData, prefsChanged]);
 
   // Save preferences when they change
   const updatePrefs = (newPrefs: Partial<ChartPreferences>) => {
     const updated = { ...prefs, ...newPrefs };
     setPrefs(updated);
     saveChartPreferences(updated);
+    // Mark preferences as changed to trigger fetch
+    setPrefsChanged(true);
   };
 
   const handleDateRangeChange = (range: DateRangeType, start?: string, end?: string) => {
