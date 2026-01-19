@@ -51,7 +51,8 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     const saved = loadChartPreferences();
     setPrefs(saved);
     // Check if saved preferences require fetching fresh data
-    const needsFetch = saved.dateRange !== 'last14days' ||
+    // Server computes 14-day tickets data, so only fetch if preferences differ
+    const needsFetch = saved.dateRange !== '14d' ||
       saved.metric !== 'tickets_daily' ||
       saved.showAdSpend;
     setPrefsChanged(needsFetch);
