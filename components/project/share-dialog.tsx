@@ -33,6 +33,7 @@ import {
   Trash2,
   Mail,
   Clock,
+  RotateCw,
 } from "lucide-react";
 
 interface ShareDialogProps {
@@ -305,6 +306,51 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
     }
   }
 
+  async function handleRevokeInvitation(invitationId: string) {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/invitations/${invitationId}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        loadMembers();
+      }
+    } catch (error) {
+      console.error("Failed to revoke invitation:", error);
+    }
+  }
+
+  async function handleUpdateInvitationRole(invitationId: string, newRole: "viewer" | "editor") {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/invitations/${invitationId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: newRole }),
+      });
+
+      if (response.ok) {
+        loadMembers();
+      }
+    } catch (error) {
+      console.error("Failed to update invitation:", error);
+    }
+  }
+
+  async function handleResendInvitation(invitationId: string, email: string) {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/invitations/${invitationId}`, {
+        method: "POST",
+      });
+
+      if (response.ok) {
+        setInviteSuccess(`Invitasjon sendt på nytt til ${email}`);
+        setTimeout(() => setInviteSuccess(null), 3000);
+      }
+    } catch (error) {
+      console.error("Failed to resend invitation:", error);
+    }
+  }
+
   function generateSlug() {
     const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
     let result = "";
@@ -489,7 +535,38 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
                               </p>
                             </div>
                           </div>
-                          <UserAccessBadge role={invite.role} />
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={invite.role}
+                              onValueChange={(v) => handleUpdateInvitationRole(invite.id, v as "viewer" | "editor")}
+                            >
+                              <SelectTrigger className="w-24 h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="viewer">GA</SelectItem>
+                                <SelectItem value="editor">Premium</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-gray-500 hover:text-gray-700"
+                              onClick={() => handleResendInvitation(invite.id, invite.email)}
+                              title="Send invitasjon på nytt"
+                            >
+                              <RotateCw className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-red-600 hover:text-red-700"
+                              onClick={() => handleRevokeInvitation(invite.id)}
+                              title="Tilbakekall invitasjon"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
