@@ -9,6 +9,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { TicketsChart } from "@/components/project/tickets-chart";
+import { getStopAdSpend } from "@/lib/ad-spend";
 
 interface Show {
   id: string;
@@ -44,6 +45,8 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
 
   // Chart data state
   const [stopChartData, setStopChartData] = useState<ChartDataPoint[]>([]);
+  const [stopAdSpendData, setStopAdSpendData] = useState<Record<string, number>>({});
+  const [stopRevenueData, setStopRevenueData] = useState<Record<string, number>>({});
   const [showChartData, setShowChartData] = useState<Record<string, ChartDataPoint[]>>({});
   const [expandedShows, setExpandedShows] = useState<Set<string>>(new Set());
   const [loadingCharts, setLoadingCharts] = useState(false);
@@ -128,6 +131,7 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
       date: string;
       showId: string;
       tickets: number;
+      revenue: number;
       isEstimated: boolean;
     }
 
@@ -137,7 +141,7 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
     for (const show of stop.shows) {
       const { data: ticketSnapshots } = await supabase
         .from("tickets")
-        .select("quantity_sold, sale_date, reported_at")
+        .select("quantity_sold, revenue, sale_date, reported_at")
         .eq("show_id", show.id)
         .order("sale_date", { ascending: true, nullsFirst: false })
         .order("reported_at", { ascending: true });
@@ -147,9 +151,11 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
       const salesStartDate = show.sales_start_date;
 
       // Helper to get the effective sales date from a ticket
+      // Reports received on a given day represent sales from the previous day
       const getEffectiveSalesDate = (ticket: { sale_date: string | null; reported_at: string | null }): string | null => {
         if (ticket.sale_date) return ticket.sale_date;
         if (ticket.reported_at) {
+          // Subtract one day from reported_at to get actual sales date
           return addDays(ticket.reported_at.split('T')[0], -1);
         }
         return null;
@@ -164,6 +170,8 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
         if (salesStartDate && salesStartDate < ticketDate) {
           const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
           const ticketsPerDay = ticket.quantity_sold / totalDays;
+          const ticketRevenue = Number(ticket.revenue) || 0;
+          const revenuePerDay = ticketRevenue / totalDays;
 
           for (let i = 0; i < totalDays; i++) {
             const date = addDays(salesStartDate, i);
@@ -172,6 +180,7 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
               date,
               showId: show.id,
               tickets: Math.round(ticketsPerDay),
+              revenue: revenuePerDay,
               isEstimated: !isLastDay,
             });
           }
@@ -180,9 +189,12 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
       }
 
       // Handle multiple reports
+      // Only use salesStartDate for distribution if it exists
       let previousDate: string | null = salesStartDate;
       let previousTotal = 0;
-      let hasBaseline = !!salesStartDate;
+      let previousRevenue = 0;
+      let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
+      let previousDateIsSalesStart = !!salesStartDate; // Track if previousDate came from salesStartDate vs a report
 
       for (let i = 0; i < ticketSnapshots.length; i++) {
         const ticket = ticketSnapshots[i];
@@ -190,49 +202,68 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
         if (!ticketDate) continue;
 
         const delta = ticket.quantity_sold - previousTotal;
+        const ticketRevenue = Number(ticket.revenue) || 0;
+        const revenueDelta = ticketRevenue - previousRevenue;
 
+        // For the first report without salesStartDate, we can't show anything
+        // (we don't know when sales started, so no baseline to compare against)
+        // But we establish the baseline for subsequent reports
         if (!hasBaseline) {
           previousTotal = ticket.quantity_sold;
+          previousRevenue = ticketRevenue;
           previousDate = ticketDate;
           hasBaseline = true;
+          previousDateIsSalesStart = false; // This date came from a report, not salesStartDate
           continue;
         }
 
+        // Skip if delta is 0 or negative (no new tickets sold)
         if (delta <= 0) {
           previousTotal = ticket.quantity_sold;
+          previousRevenue = ticketRevenue;
           previousDate = ticketDate;
+          previousDateIsSalesStart = false;
           continue;
         }
 
+        // Only distribute if we have a valid previous date that's before the current date
         const canDistribute = previousDate && previousDate < ticketDate;
 
         if (!canDistribute) {
+          // No distribution - show actual on report date
           distributedData.push({
             date: ticketDate,
             showId: show.id,
             tickets: delta,
+            revenue: revenueDelta,
             isEstimated: false,
           });
         } else {
-          const totalDays = daysBetween(previousDate!, ticketDate) + 1;
+          // If previousDate came from a report (not salesStartDate), start distribution from day after
+          // because the report date's sales are already accounted for in the cumulative total
+          const distributionStartDate = previousDateIsSalesStart ? previousDate! : addDays(previousDate!, 1);
+          const totalDays = daysBetween(distributionStartDate, ticketDate) + 1;
 
           if (totalDays <= 1) {
             distributedData.push({
               date: ticketDate,
               showId: show.id,
               tickets: delta,
+              revenue: revenueDelta,
               isEstimated: false,
             });
           } else {
             const ticketsPerDay = delta / totalDays;
+            const revenuePerDay = revenueDelta / totalDays;
 
             for (let j = 0; j < totalDays; j++) {
-              const date = addDays(previousDate!, j);
+              const date = addDays(distributionStartDate, j);
               const isLastDay = j === totalDays - 1;
               distributedData.push({
                 date,
                 showId: show.id,
                 tickets: Math.round(ticketsPerDay),
+                revenue: revenuePerDay,
                 isEstimated: !isLastDay,
               });
             }
@@ -240,18 +271,25 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
         }
 
         previousTotal = ticket.quantity_sold;
+        previousRevenue = ticketRevenue;
         previousDate = ticketDate;
+        previousDateIsSalesStart = false; // From now on, previousDate is always a report date
       }
     }
 
     // Aggregate distributed data by date and show
     const ticketsByDateAndShow: Record<string, Record<string, { actual: number; estimated: number }>> = {};
+    const revenueByDate: Record<string, number> = {};
 
+    // Calculate date range for the last 14 days
+    const dates: string[] = [];
     for (let i = 0; i < 14; i++) {
       const date = new Date();
       date.setDate(date.getDate() - 1 - (13 - i));
       const dateStr = date.toISOString().split('T')[0];
+      dates.push(dateStr);
       ticketsByDateAndShow[dateStr] = {};
+      revenueByDate[dateStr] = 0;
       for (const show of stop.shows) {
         ticketsByDateAndShow[dateStr][show.id] = { actual: 0, estimated: 0 };
       }
@@ -264,6 +302,8 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
         } else {
           ticketsByDateAndShow[item.date][item.showId].actual += item.tickets;
         }
+        // Aggregate revenue
+        revenueByDate[item.date] = (revenueByDate[item.date] || 0) + item.revenue;
       }
     }
 
@@ -280,6 +320,14 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
       });
 
     setStopChartData(formattedData);
+    setStopRevenueData(revenueByDate);
+
+    // Fetch ad spend for the stop
+    const startDate = dates[0];
+    const endDate = dates[dates.length - 1];
+    const adSpend = await getStopAdSpend(supabase, stop.id, startDate, endDate);
+    setStopAdSpendData(adSpend);
+
     setLoadingCharts(false);
   }
 
@@ -499,6 +547,9 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
                   }))}
                   title="Billettutvikling per show"
                   height={180}
+                  adSpendData={stopAdSpendData}
+                  revenueData={stopRevenueData}
+                  includeMva={true}
                 />
               )}
             </div>
