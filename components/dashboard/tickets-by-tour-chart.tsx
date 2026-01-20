@@ -194,6 +194,7 @@ export function TicketsByTourChart({
           )}
           <ReferenceLine y={0} stroke="#E5E7EB" yAxisId="primary" />
           <ChartTooltip
+            wrapperStyle={{ zIndex: 1000 }}
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
 

@@ -24,22 +24,52 @@ async function getDashboardData() {
   // Use admin client for data queries (bypasses RLS)
   const adminClient = createAdminClient();
 
+  // Get organization membership (if any)
   const { data: membership } = await adminClient
     .from("organization_members")
     .select("organization_id")
     .eq("user_id", user.id)
     .single();
 
-  if (!membership) return null;
+  // Get direct project memberships
+  const { data: projectMemberships } = await adminClient
+    .from("project_members")
+    .select("project_id")
+    .eq("user_id", user.id);
 
-  const orgId = membership.organization_id;
+  const directProjectIds = projectMemberships?.map(pm => pm.project_id) || [];
 
-  // Fetch all data upfront in parallel to minimize database round-trips
-  const { data: projects } = await adminClient
-    .from("projects")
-    .select("*")
-    .eq("organization_id", orgId)
-    .order("created_at", { ascending: false });
+  // Fetch projects from organization (if member) and direct project memberships
+  let projects: any[] = [];
+
+  if (membership) {
+    const { data: orgProjects } = await adminClient
+      .from("projects")
+      .select("*")
+      .eq("organization_id", membership.organization_id)
+      .order("created_at", { ascending: false });
+    projects = orgProjects || [];
+  }
+
+  // Add directly invited projects (if not already included)
+  if (directProjectIds.length > 0) {
+    const existingIds = new Set(projects.map(p => p.id));
+    const { data: directProjects } = await adminClient
+      .from("projects")
+      .select("*")
+      .in("id", directProjectIds);
+
+    for (const project of directProjects || []) {
+      if (!existingIds.has(project.id)) {
+        projects.push(project);
+      }
+    }
+  }
+
+  // If no projects from either source, return empty
+  if (!membership && directProjectIds.length === 0) {
+    return { projects: [], stats: { ticketsToday: 0, ticketsWeek: 0, revenueWeek: 0, activeProjects: 0 }, chartData: [] };
+  }
 
   if (!projects || projects.length === 0) {
     return { projects: [], stats: { ticketsToday: 0, ticketsWeek: 0, revenueWeek: 0, activeProjects: 0 }, chartData: [] };

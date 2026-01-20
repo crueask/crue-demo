@@ -115,10 +115,83 @@ export default function ReportsAdminPage() {
     const supabase = createClient();
 
     try {
-      // First get all tickets
+      // First get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setError("Ikke logget inn");
+        setLoading(false);
+        return;
+      }
+
+      // Get user's accessible project IDs
+      // 1. From organization membership
+      const { data: orgMembership } = await supabase
+        .from("organization_members")
+        .select("organization_id")
+        .eq("user_id", user.id)
+        .single();
+
+      let accessibleProjectIds: string[] = [];
+
+      if (orgMembership) {
+        const { data: orgProjects } = await supabase
+          .from("projects")
+          .select("id")
+          .eq("organization_id", orgMembership.organization_id);
+        accessibleProjectIds = orgProjects?.map(p => p.id) || [];
+      }
+
+      // 2. From direct project membership
+      const { data: projectMemberships } = await supabase
+        .from("project_members")
+        .select("project_id")
+        .eq("user_id", user.id);
+
+      const directProjectIds = projectMemberships?.map(pm => pm.project_id) || [];
+      accessibleProjectIds = [...new Set([...accessibleProjectIds, ...directProjectIds])];
+
+      if (accessibleProjectIds.length === 0) {
+        setReports([]);
+        setProjects([]);
+        setLoading(false);
+        return;
+      }
+
+      // First get stops for accessible projects
+      const { data: accessibleStops } = await supabase
+        .from("stops")
+        .select("id")
+        .in("project_id", accessibleProjectIds);
+
+      const accessibleStopIds = accessibleStops?.map(s => s.id) || [];
+
+      if (accessibleStopIds.length === 0) {
+        setReports([]);
+        setProjects([]);
+        setLoading(false);
+        return;
+      }
+
+      // Get shows for accessible stops
+      const { data: accessibleShows } = await supabase
+        .from("shows")
+        .select("id")
+        .in("stop_id", accessibleStopIds);
+
+      const accessibleShowIds = accessibleShows?.map(s => s.id) || [];
+
+      if (accessibleShowIds.length === 0) {
+        setReports([]);
+        setProjects([]);
+        setLoading(false);
+        return;
+      }
+
+      // Get tickets only for accessible shows
       const { data: ticketsData, error: ticketsError } = await supabase
         .from("tickets")
         .select("*")
+        .in("show_id", accessibleShowIds)
         .order("reported_at", { ascending: false });
 
       if (ticketsError) {

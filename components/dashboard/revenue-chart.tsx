@@ -63,6 +63,7 @@ export function RevenueChart({ data }: RevenueChartProps) {
             />
             <ChartTooltip
               cursor={false}
+              wrapperStyle={{ zIndex: 1000 }}
               content={<ChartTooltipContent indicator="dot" />}
             />
             <Area
