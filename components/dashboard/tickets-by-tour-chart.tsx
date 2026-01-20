@@ -82,12 +82,12 @@ export function TicketsByTourChart({
 
   const formatCurrency = (value: number) => {
     if (value >= 1000000) {
-      return `${(value / 1000000).toFixed(1)}M`;
+      return `${Math.round(value / 1000000)}M kr`;
     }
     if (value >= 1000) {
-      return `${(value / 1000).toFixed(0)}k`;
+      return `${Math.round(value / 1000)}k kr`;
     }
-    return new Intl.NumberFormat("nb-NO").format(value);
+    return `${Math.round(value)} kr`;
   };
 
   const formatTooltipValue = (value: number) => {
@@ -133,7 +133,7 @@ export function TicketsByTourChart({
       <ChartContainer config={chartConfig} className="h-[280px] w-full">
         <ComposedChart
           data={dataWithTotals}
-          margin={{ top: 20, right: hasAdSpendData ? 60 : 0, left: 0, bottom: 0 }}
+          margin={{ top: 20, right: 0, left: 0, bottom: 0 }}
         >
           {/* SVG pattern definitions for estimated (striped) bars */}
           <defs>
@@ -185,10 +185,11 @@ export function TicketsByTourChart({
               orientation="right"
               tickLine={false}
               axisLine={false}
-              tickMargin={8}
+              tickMargin={4}
               tick={{ fontSize: 11, fill: AD_SPEND_COLOR }}
               tickFormatter={formatCurrency}
               domain={[0, maxAdSpend * 1.1]}
+              width={45}
             />
           )}
           <ReferenceLine y={0} stroke="#E5E7EB" yAxisId="primary" />
