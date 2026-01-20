@@ -306,7 +306,7 @@ export function TicketsChart({
                           <div className="flex items-center justify-between gap-4 pt-1.5 mt-1.5 border-t border-gray-100">
                             <span className="text-sm text-gray-600">Billettomsetning</span>
                             <span className="text-sm font-semibold text-blue-600">
-                              {formatCurrency(dailyRevenue)} kr
+                              {formatCurrency(dailyRevenue)}
                             </span>
                           </div>
                           {/* Annonsekostnad (ad spend) */}
@@ -321,7 +321,7 @@ export function TicketsChart({
                               </span>
                             </div>
                             <span className="text-sm font-semibold" style={{ color: AD_SPEND_COLOR }}>
-                              {formatCurrency(adSpendValue)} kr
+                              {formatCurrency(adSpendValue)}
                             </span>
                           </div>
                           {hasRoasData && (
