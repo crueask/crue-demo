@@ -13,7 +13,8 @@
  *   ZAPIER_WEBHOOK_URL - Zapier webhook endpoint
  */
 
-import { chromium, Page } from 'playwright';
+import { chromium } from 'playwright';
+import type { Page } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -46,7 +47,7 @@ interface ShowData {
   reserved: number;
   availableTickets: number;
   categories: TicketCategory[];
-  totalRevenue: string;
+  totalRevenue: number;
   purchaseLink: string;
   extractedAt: string;
 }
@@ -70,10 +71,12 @@ interface ShowWithVenue extends ShowData {
 
 interface ZapierPayload {
   extraction_timestamp: string;
+  source: string;
+  currency: string;
   total_venues: number;
   total_shows: number;
   total_tickets_sold: number;
-  total_revenue: string;
+  total_revenue: number;
   shows: ShowWithVenue[];
   summary: string;
 }
@@ -174,7 +177,7 @@ async function getShowDetails(page: Page, partnerId: string, renterId: string, s
     const reservedMatch = bodyText.match(/Reservert\s*(\d+)/i);
 
     const categories: { name: string; count: number; revenue: string }[] = [];
-    let totalRevenue = '';
+    let totalRevenueStr = '';
     let foundCategoryHeader = false;
 
     document.querySelectorAll('table tr').forEach(row => {
@@ -190,7 +193,7 @@ async function getShowDetails(page: Page, partnerId: string, renterId: string, s
           const revenue = cells[2]?.textContent?.trim() || '0 kr';
 
           if (text.toLowerCase().includes('total')) {
-            totalRevenue = revenue;
+            totalRevenueStr = revenue;
           } else {
             categories.push({
               name: text,
@@ -201,6 +204,10 @@ async function getShowDetails(page: Page, partnerId: string, renterId: string, s
         }
       }
     });
+
+    // Parse revenue string to number (e.g., "123 456 kr" -> 123456)
+    const revenueMatch = totalRevenueStr.match(/[\d\s]+/);
+    const totalRevenue = revenueMatch ? parseInt(revenueMatch[0].replace(/\s/g, '')) || 0 : 0;
 
     const purchaseLink = document.querySelector('a[href*="checkout"]')?.getAttribute('href') || '';
 
@@ -301,7 +308,7 @@ async function extractVenueShows(page: Page, venue: Venue): Promise<ShowData[]> 
         const showData = await getShowDetails(page, venue.partnerId, venue.renterId, showIdMatch[1]);
         showData.showId = showIdMatch[1];
         shows.push(showData);
-        console.log(`   ✓ ${showData.showName}: ${showData.soldTickets}/${showData.totalCapacity} (${showData.totalRevenue})`);
+        console.log(`   ✓ ${showData.showName}: ${showData.soldTickets}/${showData.totalCapacity} (${showData.totalRevenue.toLocaleString('nb-NO')} NOK)`);
       } catch (error) {
         console.log(`   ⚠️ Failed to extract show ${showIdMatch[1]}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
@@ -335,21 +342,20 @@ async function sendToZapier(data: ExtractionResult): Promise<void> {
         renterId: venue.renterId,
       });
       totalTicketsSold += show.soldTickets;
-      const revenueMatch = show.totalRevenue.match(/[\d\s]+/);
-      if (revenueMatch) {
-        totalRevenueNum += parseInt(revenueMatch[0].replace(/\s/g, '')) || 0;
-      }
+      totalRevenueNum += show.totalRevenue;
     });
   });
 
   const payload: ZapierPayload = {
     extraction_timestamp: data.extractedAt,
+    source: 'dx',
+    currency: 'NOK',
     total_venues: data.venues.length,
     total_shows: showsWithVenue.length,
     total_tickets_sold: totalTicketsSold,
-    total_revenue: `${totalRevenueNum.toLocaleString('nb-NO')} kr`,
+    total_revenue: totalRevenueNum,
     shows: showsWithVenue,
-    summary: `Extracted ${showsWithVenue.length} shows from ${data.venues.length} venues. Total tickets: ${totalTicketsSold}. Revenue: ${totalRevenueNum.toLocaleString('nb-NO')} kr`
+    summary: `DX: Extracted ${showsWithVenue.length} shows from ${data.venues.length} venues. Total tickets: ${totalTicketsSold}. Revenue: ${totalRevenueNum.toLocaleString('nb-NO')} NOK`
   };
 
   console.log('\n📤 Sending data to Zapier webhook...');

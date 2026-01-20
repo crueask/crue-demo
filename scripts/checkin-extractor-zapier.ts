@@ -13,7 +13,8 @@
  *   ZAPIER_WEBHOOK_URL - Zapier webhook endpoint (same as DX)
  */
 
-import { chromium, Page } from 'playwright';
+import { chromium } from 'playwright';
+import type { Page } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -41,10 +42,9 @@ interface EventData {
   dateTime: string;
   location: string;
   ticketsSold: number;
-  totalRevenue: string;
-  totalRevenueNum: number;
-  paidAmount: string;
-  outstanding: string;
+  totalRevenue: number;
+  paidAmount: number;
+  outstanding: number;
   orderCount: number;
   personCount: number;
   ticketTypes: TicketType[];
@@ -68,10 +68,11 @@ interface EventWithWorkspace extends EventData {
 interface ZapierPayload {
   extraction_timestamp: string;
   source: string;
+  currency: string;
   total_workspaces: number;
   total_events: number;
   total_tickets_sold: number;
-  total_revenue: string;
+  total_revenue: number;
   events: EventWithWorkspace[];
   summary: string;
 }
@@ -234,7 +235,7 @@ async function getEventDetails(page: Page, customerId: string, eventId: string):
     await page.goto(detailUrl);
     await page.waitForTimeout(2000);
 
-    const eventData = await page.evaluate((evtId, custId) => {
+    const eventData = await page.evaluate(({ evtId, custId }) => {
       const bodyText = document.body.innerText;
 
       // Get event name from h1 or prominent heading
@@ -256,10 +257,10 @@ async function getEventDetails(page: Page, customerId: string, eventId: string):
       const totalRevenueNum = parseInt(totalRevenue.replace(/\s/g, '')) || 0;
 
       const paidMatch = bodyText.match(/Innbetalt[^:]*:\s*NOK\s*([\d\s]+)/i);
-      const paidAmount = paidMatch ? `NOK ${paidMatch[1].trim()}` : 'NOK 0';
+      const paidAmountNum = paidMatch ? parseInt(paidMatch[1].replace(/\s/g, '')) || 0 : 0;
 
       const outstandingMatch = bodyText.match(/Utestående[^:]*:\s*NOK\s*([\d\s]+)/i);
-      const outstanding = outstandingMatch ? `NOK ${outstandingMatch[1].trim()}` : 'NOK 0';
+      const outstandingNum = outstandingMatch ? parseInt(outstandingMatch[1].replace(/\s/g, '')) || 0 : 0;
 
       const ordersMatch = bodyText.match(/Bestillinger[^:]*:\s*(\d+)/i);
       const orderCount = ordersMatch ? parseInt(ordersMatch[1]) : 0;
@@ -312,17 +313,16 @@ async function getEventDetails(page: Page, customerId: string, eventId: string):
         dateTime,
         location,
         ticketsSold,
-        totalRevenue: `NOK ${totalRevenue}`,
-        totalRevenueNum,
-        paidAmount,
-        outstanding,
+        totalRevenue: totalRevenueNum,
+        paidAmount: paidAmountNum,
+        outstanding: outstandingNum,
         orderCount,
         personCount,
         ticketTypes,
         isArchived,
         extractedAt: new Date().toISOString()
       };
-    }, eventId, customerId);
+    }, { evtId: eventId, custId: customerId });
 
     return eventData;
   } catch (error) {
@@ -349,17 +349,18 @@ async function sendToZapier(data: ExtractionResult): Promise<void> {
         workspaceName: workspace.name,
       });
       totalTicketsSold += event.ticketsSold;
-      totalRevenueNum += event.totalRevenueNum;
+      totalRevenueNum += event.totalRevenue;
     });
   });
 
   const payload: ZapierPayload = {
     extraction_timestamp: data.extractedAt,
     source: 'checkin',
+    currency: 'NOK',
     total_workspaces: data.workspaces.length,
     total_events: eventsWithWorkspace.length,
     total_tickets_sold: totalTicketsSold,
-    total_revenue: `NOK ${totalRevenueNum.toLocaleString('nb-NO')}`,
+    total_revenue: totalRevenueNum,
     events: eventsWithWorkspace,
     summary: `Checkin: Extracted ${eventsWithWorkspace.length} events from ${data.workspaces.length} workspaces. Total tickets: ${totalTicketsSold}. Revenue: NOK ${totalRevenueNum.toLocaleString('nb-NO')}`
   };
@@ -439,7 +440,7 @@ async function extractAllData(): Promise<ExtractionResult> {
           }
           eventData.isArchived = eventInfo.isArchived;
           events.push(eventData);
-          console.log(`   ✓ ${eventData.eventName}: ${eventData.ticketsSold} tickets (${eventData.totalRevenue})`);
+          console.log(`   ✓ ${eventData.eventName}: ${eventData.ticketsSold} tickets (NOK ${eventData.totalRevenue.toLocaleString('nb-NO')})`);
         }
       }
 
