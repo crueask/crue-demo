@@ -150,8 +150,15 @@ async function getVenueList(page: Page): Promise<Venue[]> {
 async function getShowDetails(page: Page, partnerId: string, renterId: string, showId: string): Promise<ShowData> {
   const url = getShowDetailUrl(partnerId, renterId, showId);
   await page.goto(url);
-  await page.waitForSelector('h2', { timeout: 10000 });
-  await page.waitForTimeout(800);
+
+  // Wait for page to load - try multiple selectors
+  try {
+    await page.waitForSelector('h2, h1, [class*="title"], [class*="header"]', { timeout: 15000 });
+  } catch {
+    // If no header found, just wait for network idle
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+  }
+  await page.waitForTimeout(1000);
 
   const showData = await page.evaluate(() => {
     const bodyText = document.body.innerText;
@@ -265,10 +272,14 @@ async function extractVenueShows(page: Page, venue: Venue): Promise<ShowData[]> 
     const showIdMatch = currentUrl.match(/shows\/(\d+)$/);
 
     if (showIdMatch) {
-      const showData = await getShowDetails(page, venue.partnerId, venue.renterId, showIdMatch[1]);
-      showData.showId = showIdMatch[1];
-      shows.push(showData);
-      console.log(`   ✓ ${showData.showName}: ${showData.soldTickets}/${showData.totalCapacity} (${showData.totalRevenue})`);
+      try {
+        const showData = await getShowDetails(page, venue.partnerId, venue.renterId, showIdMatch[1]);
+        showData.showId = showIdMatch[1];
+        shows.push(showData);
+        console.log(`   ✓ ${showData.showName}: ${showData.soldTickets}/${showData.totalCapacity} (${showData.totalRevenue})`);
+      } catch (error) {
+        console.log(`   ⚠️ Failed to extract show ${showIdMatch[1]}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     }
   }
 
