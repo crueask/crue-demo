@@ -467,17 +467,20 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
                   <div className="space-y-2">
                     <Label className="text-xs text-gray-500">Inviterte brukere</Label>
                     <div className="border rounded-lg divide-y">
-                      {projectMembers.map((member) => (
+                      {projectMembers.map((member) => {
+                        const email = member.user_profiles?.email || `User ${member.user_id.slice(0, 8)}`;
+                        const displayName = member.user_profiles?.display_name;
+                        return (
                         <div key={member.id} className="flex items-center justify-between px-3 py-2">
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-medium text-blue-700">
-                              {(member.user_profiles?.display_name || member.user_profiles?.email || "?")[0].toUpperCase()}
+                              {(displayName || email || "?")[0].toUpperCase()}
                             </div>
                             <div>
                               <p className="text-sm font-medium">
-                                {member.user_profiles?.display_name || member.user_profiles?.email}
+                                {displayName || email}
                               </p>
-                              {member.user_profiles?.display_name && (
+                              {displayName && member.user_profiles?.email && (
                                 <p className="text-xs text-gray-500">{member.user_profiles.email}</p>
                               )}
                             </div>
@@ -511,7 +514,8 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
                             )}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
