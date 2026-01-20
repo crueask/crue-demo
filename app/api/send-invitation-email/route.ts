@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     const roleLabel = role === "viewer" ? "Lesetilgang (GA)" : "Redigeringstilgang (Premium)";
 
     const { data, error } = await resend.emails.send({
-      from: "Crue <noreply@crue.no>",
+      from: "Crue <noreply@post.crue.no>",
       to: [recipientEmail],
       subject: `Du er invitert til ${projectName} på Crue`,
       html: `
