@@ -77,8 +77,11 @@ export async function GET(
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
+    // Use admin client for fetching members and invitations (bypasses RLS)
+    const adminClient = createAdminClient();
+
     // Get project members with user profiles
-    const { data: members, error: membersError } = await supabase
+    const { data: members, error: membersError } = await adminClient
       .from("project_members")
       .select(`
         id,
@@ -103,8 +106,7 @@ export async function GET(
     const canManage = await canManageProjectMembers(supabase, projectId);
 
     if (canManage) {
-      // Use admin client to bypass RLS for fetching invitations
-      const adminClient = createAdminClient();
+      // Use same admin client to fetch invitations
       const { data: invitationsData } = await adminClient
         .from("project_invitations")
         .select("*")
@@ -192,9 +194,9 @@ export async function POST(
       (u) => u.email?.toLowerCase() === email.toLowerCase()
     );
 
-    // Check if already a member
+    // Check if already a member (use admin client to bypass RLS)
     if (existingUser) {
-      const { data: existingMember } = await supabase
+      const { data: existingMember } = await adminClient
         .from("project_members")
         .select("id")
         .eq("project_id", projectId)
@@ -208,15 +210,15 @@ export async function POST(
         );
       }
 
-      // Check if user is already an org member
-      const { data: project } = await supabase
+      // Check if user is already an org member (use admin client to bypass RLS)
+      const { data: project } = await adminClient
         .from("projects")
         .select("organization_id")
         .eq("id", projectId)
         .single();
 
       if (project) {
-        const { data: orgMember } = await supabase
+        const { data: orgMember } = await adminClient
           .from("organization_members")
           .select("id")
           .eq("organization_id", project.organization_id)
