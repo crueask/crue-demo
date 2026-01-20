@@ -88,12 +88,12 @@ export function TicketsChart({
 
   const formatCurrency = (value: number) => {
     if (value >= 1000000) {
-      return `${Math.round(value / 1000000)}M`;
+      return `${Math.round(value / 1000000)}M kr`;
     }
     if (value >= 1000) {
-      return `${Math.round(value / 1000)}k`;
+      return `${Math.round(value / 1000)}k kr`;
     }
-    return Math.round(value).toString();
+    return `${Math.round(value)} kr`;
   };
 
   const formatTooltipValue = (value: number) => {
@@ -196,7 +196,7 @@ export function TicketsChart({
               tick={{ fontSize: 10, fill: AD_SPEND_COLOR }}
               tickFormatter={formatCurrency}
               domain={[0, maxAdSpend * 1.1]}
-              width={35}
+              width={45}
             />
           )}
           <ReferenceLine y={0} stroke="#E5E7EB" yAxisId="primary" />
