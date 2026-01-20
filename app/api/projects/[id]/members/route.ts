@@ -230,7 +230,8 @@ export async function POST(
       }
 
       // User exists, add them directly as project member
-      const { data: member, error: memberError } = await supabase
+      // Use admin client to bypass RLS (we've already verified permissions above)
+      const { data: member, error: memberError } = await adminClient
         .from("project_members")
         .insert({
           project_id: projectId,
@@ -258,7 +259,8 @@ export async function POST(
     }
 
     // User doesn't exist, check for existing invitation
-    const { data: existingInvitation } = await supabase
+    // Use admin client to bypass RLS (we've already verified permissions above)
+    const { data: existingInvitation } = await adminClient
       .from("project_invitations")
       .select("id")
       .eq("project_id", projectId)
@@ -276,7 +278,7 @@ export async function POST(
     // Create invitation with secure token
     const token = crypto.randomUUID();
 
-    const { data: invitation, error: inviteError } = await supabase
+    const { data: invitation, error: inviteError } = await adminClient
       .from("project_invitations")
       .insert({
         project_id: projectId,
