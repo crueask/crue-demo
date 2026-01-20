@@ -90,7 +90,7 @@ export async function GET(
         role,
         invited_by,
         created_at,
-        user_profiles!project_members_user_id_fkey (
+        user_profiles (
           email,
           display_name
         )
@@ -100,6 +100,9 @@ export async function GET(
     if (membersError) {
       console.error("Error fetching members:", membersError);
     }
+
+    // Debug: log the members data
+    console.log("Project members for", projectId, ":", JSON.stringify(members, null, 2));
 
     // Get pending invitations (only if user can manage)
     let invitations: any[] = [];
