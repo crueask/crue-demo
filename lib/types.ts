@@ -414,6 +414,93 @@ export interface Database {
           generated_at?: string;
         };
       };
+      user_profiles: {
+        Row: {
+          id: string;
+          email: string;
+          display_name: string | null;
+          global_role: "user" | "super_admin";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          email: string;
+          display_name?: string | null;
+          global_role?: "user" | "super_admin";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          email?: string;
+          display_name?: string | null;
+          global_role?: "user" | "super_admin";
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      project_members: {
+        Row: {
+          id: string;
+          project_id: string;
+          user_id: string;
+          role: "viewer" | "editor";
+          invited_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          user_id: string;
+          role?: "viewer" | "editor";
+          invited_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          user_id?: string;
+          role?: "viewer" | "editor";
+          invited_by?: string | null;
+          created_at?: string;
+        };
+      };
+      project_invitations: {
+        Row: {
+          id: string;
+          project_id: string;
+          email: string;
+          role: "viewer" | "editor";
+          invited_by: string | null;
+          token: string;
+          expires_at: string;
+          accepted_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          email: string;
+          role?: "viewer" | "editor";
+          invited_by?: string | null;
+          token: string;
+          expires_at?: string;
+          accepted_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          email?: string;
+          role?: "viewer" | "editor";
+          invited_by?: string | null;
+          token?: string;
+          expires_at?: string;
+          accepted_at?: string | null;
+          created_at?: string;
+        };
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -433,6 +520,13 @@ export type SharedDashboard = Database["public"]["Tables"]["shared_dashboards"][
 export type ChatConversation = Database["public"]["Tables"]["chat_conversations"]["Row"];
 export type ChatMessage = Database["public"]["Tables"]["chat_messages"]["Row"];
 export type DataSummary = Database["public"]["Tables"]["data_summaries"]["Row"];
+export type UserProfile = Database["public"]["Tables"]["user_profiles"]["Row"];
+export type ProjectMember = Database["public"]["Tables"]["project_members"]["Row"];
+export type ProjectInvitation = Database["public"]["Tables"]["project_invitations"]["Row"];
+
+// User role types
+export type ProjectRole = "viewer" | "editor" | "admin" | "super_admin";
+export type GlobalRole = "user" | "super_admin";
 
 // Extended types with relations
 export type ProjectWithStops = Project & {

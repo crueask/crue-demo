@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Users, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Users, AlertTriangle, Lock } from "lucide-react";
 import { getSourceLabel } from "@/lib/ad-spend";
 import { CampaignLinkingDialog } from "./campaign-linking-dialog";
+import { useUserRole } from "@/lib/hooks/use-user-role";
 
 interface Connection {
   id: string;
@@ -40,6 +41,9 @@ export function StopAdConnections({
   const [sharedStops, setSharedStops] = useState<Record<string, SharedStop[]>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // User role check
+  const { isSuperAdmin, isLoading: roleLoading } = useUserRole();
 
   // Dialog state
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -197,22 +201,34 @@ export function StopAdConnections({
     return conn.allocation_percent + sharedTotal;
   };
 
+  // If not super admin and no connections exist, don't show this section at all
+  if (!isSuperAdmin && !roleLoading && connections.length === 0) {
+    return null;
+  }
+
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Annonsekostnader
         </span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs"
-          onClick={() => setIsAddDialogOpen(true)}
-          disabled={loading}
-        >
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          Koble til
-        </Button>
+        {isSuperAdmin ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setIsAddDialogOpen(true)}
+            disabled={loading || roleLoading}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Koble til
+          </Button>
+        ) : (
+          <span className="text-xs text-gray-400 flex items-center gap-1">
+            <Lock className="h-3 w-3" />
+            Kun AAA
+          </span>
+        )}
       </div>
 
       {loading ? (
@@ -277,55 +293,63 @@ export function StopAdConnections({
                   )}
                 </div>
                 <div className="flex items-center gap-2 ml-3">
-                  {isEditing ? (
-                    <div className="flex items-center gap-1">
-                      <Input
-                        type="number"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        className="w-16 h-7 text-sm text-right"
-                        min={0}
-                        max={100}
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            handleUpdateAllocation(conn.id, Number(editValue));
-                          } else if (e.key === "Escape") {
-                            setEditingId(null);
-                          }
-                        }}
-                      />
-                      <span className="text-sm text-gray-500">%</span>
+                  {isSuperAdmin ? (
+                    <>
+                      {isEditing ? (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            className="w-16 h-7 text-sm text-right"
+                            min={0}
+                            max={100}
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                handleUpdateAllocation(conn.id, Number(editValue));
+                              } else if (e.key === "Escape") {
+                                setEditingId(null);
+                              }
+                            }}
+                          />
+                          <span className="text-sm text-gray-500">%</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => handleUpdateAllocation(conn.id, Number(editValue))}
+                            disabled={saving}
+                          >
+                            Lagre
+                          </Button>
+                        </div>
+                      ) : (
+                        <button
+                          className="text-sm font-medium text-gray-700 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-100"
+                          onClick={() => {
+                            setEditingId(conn.id);
+                            setEditValue(conn.allocation_percent.toString());
+                          }}
+                        >
+                          {conn.allocation_percent.toFixed(1)}%
+                        </button>
+                      )}
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => handleUpdateAllocation(conn.id, Number(editValue))}
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => handleDeleteConnection(conn.id)}
                         disabled={saving}
                       >
-                        Lagre
+                        <Trash2 className="h-4 w-4 text-gray-400 hover:text-red-500" />
                       </Button>
-                    </div>
+                    </>
                   ) : (
-                    <button
-                      className="text-sm font-medium text-gray-700 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-100"
-                      onClick={() => {
-                        setEditingId(conn.id);
-                        setEditValue(conn.allocation_percent.toString());
-                      }}
-                    >
+                    <span className="text-sm font-medium text-gray-500">
                       {conn.allocation_percent.toFixed(1)}%
-                    </button>
+                    </span>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => handleDeleteConnection(conn.id)}
-                    disabled={saving}
-                  >
-                    <Trash2 className="h-4 w-4 text-gray-400 hover:text-red-500" />
-                  </Button>
                 </div>
               </div>
             );
@@ -333,13 +357,15 @@ export function StopAdConnections({
         </div>
       )}
 
-      <CampaignLinkingDialog
-        open={isAddDialogOpen}
-        onOpenChange={setIsAddDialogOpen}
-        stopId={stopId}
-        stopName={stopName}
-        onSuccess={handleConnectionAdded}
-      />
+      {isSuperAdmin && (
+        <CampaignLinkingDialog
+          open={isAddDialogOpen}
+          onOpenChange={setIsAddDialogOpen}
+          stopId={stopId}
+          stopName={stopName}
+          onSuccess={handleConnectionAdded}
+        />
+      )}
     </div>
   );
 }

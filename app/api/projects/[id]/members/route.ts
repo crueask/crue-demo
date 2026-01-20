@@ -1,0 +1,326 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+// Helper function to check if user can manage project members
+async function canManageProjectMembers(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  projectId: string
+) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return false;
+
+  // Check if crue.no email (super admin)
+  if (user.email?.endsWith("@crue.no")) {
+    return true;
+  }
+
+  // Check user_profiles global_role
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("global_role")
+    .eq("id", user.id)
+    .single();
+
+  if (profile?.global_role === "super_admin") {
+    return true;
+  }
+
+  // Check if user is org admin for this project
+  const { data: project } = await supabase
+    .from("projects")
+    .select("organization_id")
+    .eq("id", projectId)
+    .single();
+
+  if (!project) return false;
+
+  const { data: membership } = await supabase
+    .from("organization_members")
+    .select("role")
+    .eq("organization_id", project.organization_id)
+    .eq("user_id", user.id)
+    .single();
+
+  return membership?.role === "admin";
+}
+
+// GET: List project members and pending invitations
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const supabase = await createClient();
+    const { id: projectId } = await params;
+
+    // Get current user
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
+    // Check if user has access to this project
+    const { data: project } = await supabase
+      .from("projects")
+      .select("id, name, organization_id")
+      .eq("id", projectId)
+      .single();
+
+    if (!project) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
+    // Get project members with user profiles
+    const { data: members, error: membersError } = await supabase
+      .from("project_members")
+      .select(`
+        id,
+        project_id,
+        user_id,
+        role,
+        invited_by,
+        created_at,
+        user_profiles!project_members_user_id_fkey (
+          email,
+          display_name
+        )
+      `)
+      .eq("project_id", projectId);
+
+    if (membersError) {
+      console.error("Error fetching members:", membersError);
+    }
+
+    // Get pending invitations (only if user can manage)
+    let invitations: any[] = [];
+    const canManage = await canManageProjectMembers(supabase, projectId);
+
+    if (canManage) {
+      const { data: invitationsData } = await supabase
+        .from("project_invitations")
+        .select("*")
+        .eq("project_id", projectId)
+        .is("accepted_at", null)
+        .gt("expires_at", new Date().toISOString());
+
+      invitations = invitationsData || [];
+    }
+
+    // Get organization members (they have implicit access)
+    const { data: orgMembers } = await supabase
+      .from("organization_members")
+      .select(`
+        id,
+        user_id,
+        role,
+        created_at,
+        user_profiles!organization_members_user_id_fkey (
+          email,
+          display_name
+        )
+      `)
+      .eq("organization_id", project.organization_id);
+
+    return NextResponse.json({
+      projectMembers: members || [],
+      organizationMembers: orgMembers || [],
+      pendingInvitations: invitations,
+      canManage,
+    });
+  } catch (error) {
+    console.error("Error in GET /api/projects/[id]/members:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+// POST: Invite a user to the project
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const supabase = await createClient();
+    const { id: projectId } = await params;
+    const body = await request.json();
+
+    const { email, role = "viewer" } = body;
+
+    if (!email) {
+      return NextResponse.json(
+        { error: "Email is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!["viewer", "editor"].includes(role)) {
+      return NextResponse.json(
+        { error: "Role must be 'viewer' or 'editor'" },
+        { status: 400 }
+      );
+    }
+
+    // Check if user can manage members
+    const canManage = await canManageProjectMembers(supabase, projectId);
+    if (!canManage) {
+      return NextResponse.json(
+        { error: "You don't have permission to invite users to this project" },
+        { status: 403 }
+      );
+    }
+
+    // Get current user for invited_by
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    // Check if user with this email already exists
+    const adminClient = createAdminClient();
+    const { data: existingUsers } = await adminClient.auth.admin.listUsers();
+    const existingUser = existingUsers?.users?.find(
+      (u) => u.email?.toLowerCase() === email.toLowerCase()
+    );
+
+    // Check if already a member
+    if (existingUser) {
+      const { data: existingMember } = await supabase
+        .from("project_members")
+        .select("id")
+        .eq("project_id", projectId)
+        .eq("user_id", existingUser.id)
+        .single();
+
+      if (existingMember) {
+        return NextResponse.json(
+          { error: "This user is already a member of this project" },
+          { status: 400 }
+        );
+      }
+
+      // Check if user is already an org member
+      const { data: project } = await supabase
+        .from("projects")
+        .select("organization_id")
+        .eq("id", projectId)
+        .single();
+
+      if (project) {
+        const { data: orgMember } = await supabase
+          .from("organization_members")
+          .select("id")
+          .eq("organization_id", project.organization_id)
+          .eq("user_id", existingUser.id)
+          .single();
+
+        if (orgMember) {
+          return NextResponse.json(
+            { error: "This user already has access through organization membership" },
+            { status: 400 }
+          );
+        }
+      }
+
+      // User exists, add them directly as project member
+      const { data: member, error: memberError } = await supabase
+        .from("project_members")
+        .insert({
+          project_id: projectId,
+          user_id: existingUser.id,
+          role,
+          invited_by: user?.id,
+        })
+        .select()
+        .single();
+
+      if (memberError) {
+        console.error("Error creating member:", memberError);
+        return NextResponse.json(
+          { error: "Failed to add member" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        member,
+        memberCreated: true,
+        message: "User added to project",
+      });
+    }
+
+    // User doesn't exist, check for existing invitation
+    const { data: existingInvitation } = await supabase
+      .from("project_invitations")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("email", email.toLowerCase())
+      .is("accepted_at", null)
+      .single();
+
+    if (existingInvitation) {
+      return NextResponse.json(
+        { error: "An invitation has already been sent to this email" },
+        { status: 400 }
+      );
+    }
+
+    // Create invitation with secure token
+    const token = crypto.randomUUID();
+
+    const { data: invitation, error: inviteError } = await supabase
+      .from("project_invitations")
+      .insert({
+        project_id: projectId,
+        email: email.toLowerCase(),
+        role,
+        invited_by: user?.id,
+        token,
+      })
+      .select()
+      .single();
+
+    if (inviteError) {
+      console.error("Error creating invitation:", inviteError);
+      return NextResponse.json(
+        { error: "Failed to create invitation" },
+        { status: 500 }
+      );
+    }
+
+    // Get project name for email
+    const { data: project } = await supabase
+      .from("projects")
+      .select("name")
+      .eq("id", projectId)
+      .single();
+
+    return NextResponse.json({
+      success: true,
+      invitation,
+      memberCreated: false,
+      message: "Invitation created - please send email to user",
+      emailData: {
+        to: email,
+        projectName: project?.name,
+        role,
+        token,
+        inviterEmail: user?.email,
+      },
+    });
+  } catch (error) {
+    console.error("Error in POST /api/projects/[id]/members:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}

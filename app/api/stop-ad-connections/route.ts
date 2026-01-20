@@ -1,6 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+// Helper function to check if user is super admin
+async function checkIsSuperAdmin(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return false;
+
+  // Check if crue.no email (auto super admin)
+  if (user.email?.endsWith("@crue.no")) {
+    return true;
+  }
+
+  // Check user_profiles global_role
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("global_role")
+    .eq("id", user.id)
+    .single();
+
+  return profile?.global_role === "super_admin";
+}
+
 // GET: Fetch connections for a stop
 export async function GET(request: NextRequest) {
   try {
@@ -39,10 +62,20 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: Create a new connection
+// POST: Create a new connection (Super admin only)
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
+
+    // Check if user is super admin
+    const isSuperAdmin = await checkIsSuperAdmin(supabase);
+    if (!isSuperAdmin) {
+      return NextResponse.json(
+        { error: "Only super admins (AAA) can manage ad connections" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
 
     const { stopId, connectionType, source, campaign, adsetId } = body;
@@ -164,10 +197,20 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH: Update allocation percentage
+// PATCH: Update allocation percentage (Super admin only)
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createClient();
+
+    // Check if user is super admin
+    const isSuperAdmin = await checkIsSuperAdmin(supabase);
+    if (!isSuperAdmin) {
+      return NextResponse.json(
+        { error: "Only super admins (AAA) can manage ad connections" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
 
     const { connectionId, allocationPercent } = body;
@@ -214,10 +257,20 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-// DELETE: Remove a connection
+// DELETE: Remove a connection (Super admin only)
 export async function DELETE(request: NextRequest) {
   try {
     const supabase = await createClient();
+
+    // Check if user is super admin
+    const isSuperAdmin = await checkIsSuperAdmin(supabase);
+    if (!isSuperAdmin) {
+      return NextResponse.json(
+        { error: "Only super admins (AAA) can manage ad connections" },
+        { status: 403 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const connectionId = searchParams.get("connectionId");
 
