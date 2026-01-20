@@ -1,8 +1,8 @@
 /**
  * Checkin Ticketing Data Extractor with Zapier Webhook Integration
  *
- * Extracts ticket sales data from Checkin (app.checkin.no) and sends to Zapier webhook.
- * Designed to run in CI/CD environments (GitHub Actions).
+ * Extracts ticket sales data from Checkin (app.checkin.no) using their API
+ * and sends to Zapier webhook. Designed to run in CI/CD environments (GitHub Actions).
  *
  * Usage:
  *   npm run checkin:extract:zapier
@@ -10,29 +10,43 @@
  * Required environment variables:
  *   CHECKIN_EMAIL - Login email for app.checkin.no
  *   CHECKIN_PASSWORD - Login password for app.checkin.no
- *   ZAPIER_WEBHOOK_URL - Zapier webhook endpoint (same as DX)
+ *   ZAPIER_WEBHOOK_URL - Zapier webhook endpoint
  */
 
 import { chromium } from 'playwright';
-import type { Page } from 'playwright';
+import type { Page, BrowserContext } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
+
+// Types for API response
+interface CheckinApiEvent {
+  id: number;
+  customer_id: number;
+  customer_name: string;
+  name: string;
+  start: number; // Unix timestamp
+  end: number;
+  geo_description: string;
+  attendees: number;
+  turnover: string; // e.g., "NOK 3 130" or just number
+  income: string;
+  image: string;
+  copy: number;
+  'active-indicator': string;
+  'registration-indicator': string;
+  'event-type': string;
+}
+
+interface CheckinApiResponse {
+  data: CheckinApiEvent[];
+  recordsTotal: number;
+  recordsFiltered: number;
+}
 
 // Types
 interface Workspace {
   customerId: string;
   name: string;
-}
-
-interface TicketType {
-  name: string;
-  sold: number;
-  accredited: number;
-  cancelled: number;
-  expected: number;
-  arrived: number;
-  waiting: number;
-  revenue: string;
 }
 
 interface EventData {
@@ -43,11 +57,6 @@ interface EventData {
   location: string;
   ticketsSold: number;
   totalRevenue: number;
-  paidAmount: number;
-  outstanding: number;
-  orderCount: number;
-  personCount: number;
-  ticketTypes: TicketType[];
   isArchived: boolean;
   extractedAt: string;
 }
@@ -81,22 +90,13 @@ interface ZapierPayload {
 const CONFIG = {
   LOGIN_URL: 'https://app.checkin.no/login?lang=nb',
   BASE_URL: 'https://app.checkin.no',
+  API_URL: 'https://app.checkin.no/api/report/event',
   LOGIN_EMAIL: process.env.CHECKIN_EMAIL || '',
   LOGIN_PASSWORD: process.env.CHECKIN_PASSWORD || '',
   OUTPUT_DIR: './checkin-reports',
   HEADLESS: process.env.HEADLESS === 'true',
   ZAPIER_WEBHOOK_URL: process.env.ZAPIER_WEBHOOK_URL || '',
 };
-
-// URL helpers
-const getEventsUrl = (customerId: string) =>
-  `${CONFIG.BASE_URL}/customer/${customerId}/event`;
-
-const getEventDetailUrl = (customerId: string, eventId: string) =>
-  `${CONFIG.BASE_URL}/customer/${customerId}/event/${eventId}`;
-
-const getEventOrdersUrl = (customerId: string, eventId: string) =>
-  `${CONFIG.BASE_URL}/customer/${customerId}/event/${eventId}/orders`;
 
 async function login(page: Page): Promise<void> {
   console.log('🔐 Logging in to Checkin...');
@@ -126,8 +126,21 @@ async function getWorkspaces(page: Page): Promise<Workspace[]> {
   const workspaces = await page.evaluate(() => {
     const results: { customerId: string; name: string }[] = [];
 
-    // Try to find workspaces from navigation links
-    document.querySelectorAll('a[href*="/customer/"]').forEach(link => {
+    // Get current workspace from URL and breadcrumb
+    const currentUrl = window.location.href;
+    const urlMatch = currentUrl.match(/\/customer\/(\d+)/);
+    if (urlMatch) {
+      // Get the workspace name from breadcrumb
+      const breadcrumb = document.querySelector('.breadcrumb li:nth-child(2) a');
+      const currentName = breadcrumb?.textContent?.trim() || 'Current Workspace';
+      results.push({
+        customerId: urlMatch[1],
+        name: currentName
+      });
+    }
+
+    // Find other workspaces in the dropdown menu
+    document.querySelectorAll('.nav-dropdown a[href*="/customer/"][data-target="body"]').forEach(link => {
       const href = link.getAttribute('href') || '';
       const match = href.match(/\/customer\/(\d+)/);
       if (match) {
@@ -141,194 +154,101 @@ async function getWorkspaces(page: Page): Promise<Workspace[]> {
       }
     });
 
-    // Also try dropdown/select options
-    document.querySelectorAll('select option, [role="option"]').forEach(opt => {
-      const value = (opt as HTMLOptionElement).value || opt.getAttribute('data-value') || '';
-      if (value && !isNaN(Number(value))) {
-        const name = opt.textContent?.trim() || '';
-        if (name && !results.some(w => w.customerId === value)) {
-          results.push({
-            customerId: value,
-            name: name
-          });
-        }
-      }
-    });
-
     return results;
   });
-
-  // If no workspaces found from UI, extract from current URL
-  if (workspaces.length === 0) {
-    const currentUrl = page.url();
-    const match = currentUrl.match(/\/customer\/(\d+)/);
-    if (match) {
-      workspaces.push({
-        customerId: match[1],
-        name: 'Default Workspace'
-      });
-    }
-  }
 
   console.log(`   Found ${workspaces.length} workspaces`);
   return workspaces;
 }
 
-async function getEventsList(page: Page, customerId: string): Promise<{ eventId: string; name: string; isArchived: boolean }[]> {
-  const eventsUrl = getEventsUrl(customerId);
-  await page.goto(eventsUrl);
-  await page.waitForTimeout(2000);
-
-  // First get active events
-  const activeEvents = await page.evaluate(() => {
-    const events: { eventId: string; name: string; isArchived: boolean }[] = [];
-    document.querySelectorAll('a[href*="/event/"]').forEach(link => {
-      const href = link.getAttribute('href') || '';
-      const match = href.match(/\/customer\/\d+\/event\/(\d+)$/);
-      if (match) {
-        events.push({
-          eventId: match[1],
-          name: link.textContent?.trim() || '',
-          isArchived: false
-        });
-      }
-    });
-    return events;
-  });
-
-  // Try to get archived events by clicking the archive toggle
-  let archivedEvents: { eventId: string; name: string; isArchived: boolean }[] = [];
-  try {
-    // Look for archive toggle link
-    const archiveToggle = await page.$('a:has-text("Arkiverte"), button:has-text("Arkiverte")');
-    if (archiveToggle) {
-      await archiveToggle.click();
-      await page.waitForTimeout(2000);
-
-      archivedEvents = await page.evaluate(() => {
-        const events: { eventId: string; name: string; isArchived: boolean }[] = [];
-        document.querySelectorAll('a[href*="/event/"]').forEach(link => {
-          const href = link.getAttribute('href') || '';
-          const match = href.match(/\/customer\/\d+\/event\/(\d+)$/);
-          if (match) {
-            events.push({
-              eventId: match[1],
-              name: link.textContent?.trim() || '',
-              isArchived: true
-            });
-          }
-        });
-        return events;
-      });
-    }
-  } catch {
-    console.log('   Could not access archived events');
-  }
-
-  const allEvents = [...activeEvents, ...archivedEvents];
-  return allEvents;
+function parseRevenue(turnover: string): number {
+  // Handle formats like "NOK 3 130", "3 130", "NOK 40 521", etc.
+  if (!turnover) return 0;
+  const numericPart = turnover.replace(/[^\d]/g, '');
+  return parseInt(numericPart) || 0;
 }
 
-async function getEventDetails(page: Page, customerId: string, eventId: string): Promise<EventData | null> {
+function formatUnixTimestamp(timestamp: number): string {
+  if (!timestamp || timestamp <= 0) return '';
+  const date = new Date(timestamp * 1000);
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${day}.${month}.${year} ${hours}:${minutes}`;
+}
+
+async function fetchEventsFromApi(context: BrowserContext, customerId: string, archived: boolean = false): Promise<CheckinApiEvent[]> {
+  // Create a new page to make the API request with cookies
+  const apiPage = await context.newPage();
+
   try {
-    const detailUrl = getEventDetailUrl(customerId, eventId);
-    await page.goto(detailUrl);
-    await page.waitForTimeout(2000);
+    // Navigate to the customer page first to ensure cookies are set
+    await apiPage.goto(`${CONFIG.BASE_URL}/customer/${customerId}/event`);
+    await apiPage.waitForTimeout(1000);
 
-    const eventData = await page.evaluate(({ evtId, custId }) => {
-      const bodyText = document.body.innerText;
+    // Make the API request using page.evaluate to use the session cookies
+    const response = await apiPage.evaluate(async ({ customerId, archived, apiUrl }) => {
+      const formData = new URLSearchParams();
+      formData.append('customer_id', customerId);
 
-      // Get event name from h1 or prominent heading
-      const eventName = document.querySelector('h1')?.textContent?.trim() ||
-        document.querySelector('h2')?.textContent?.trim() || '';
+      // Add filter for archived/active
+      if (archived) {
+        formData.append('filters[0][key]', 'archived');
+        formData.append('filters[0][value]', '1');
+        formData.append('filters[0][operator]', '8');
+      }
 
-      // Extract date/time - look for date pattern
-      const dateMatch = bodyText.match(/(\d{1,2}\.\d{1,2}\.\d{4}\s+\d{1,2}:\d{2})/);
-      const dateTime = dateMatch ? dateMatch[1] : '';
-
-      // Extract location
-      const locationMatch = bodyText.match(/([^,]+,\s*[^,]+,\s*Norge)/i);
-      const location = locationMatch ? locationMatch[1] : '';
-
-      // Extract financial data
-      const revenueMatch = bodyText.match(/Total omsetning[^:]*:\s*NOK\s*([\d\s]+)/i) ||
-        bodyText.match(/omsetning[^:]*:\s*NOK\s*([\d\s]+)/i);
-      const totalRevenue = revenueMatch ? revenueMatch[1].trim() : '0';
-      const totalRevenueNum = parseInt(totalRevenue.replace(/\s/g, '')) || 0;
-
-      const paidMatch = bodyText.match(/Innbetalt[^:]*:\s*NOK\s*([\d\s]+)/i);
-      const paidAmountNum = paidMatch ? parseInt(paidMatch[1].replace(/\s/g, '')) || 0 : 0;
-
-      const outstandingMatch = bodyText.match(/Utestående[^:]*:\s*NOK\s*([\d\s]+)/i);
-      const outstandingNum = outstandingMatch ? parseInt(outstandingMatch[1].replace(/\s/g, '')) || 0 : 0;
-
-      const ordersMatch = bodyText.match(/Bestillinger[^:]*:\s*(\d+)/i);
-      const orderCount = ordersMatch ? parseInt(ordersMatch[1]) : 0;
-
-      const personsMatch = bodyText.match(/Personer[^:]*:\s*(\d+)/i);
-      const personCount = personsMatch ? parseInt(personsMatch[1]) : 0;
-
-      // Check if archived
-      const isArchived = bodyText.toLowerCase().includes('arkivert');
-
-      // Extract ticket types from table
-      const ticketTypes: {
-        name: string;
-        sold: number;
-        accredited: number;
-        cancelled: number;
-        expected: number;
-        arrived: number;
-        waiting: number;
-        revenue: string;
-      }[] = [];
-
-      document.querySelectorAll('table tr').forEach(row => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 7) {
-          const nameCell = cells[0]?.textContent?.trim() || '';
-          // Skip header rows and sum rows
-          if (nameCell && !nameCell.toLowerCase().includes('sum') && !nameCell.toLowerCase().includes('billettyper')) {
-            ticketTypes.push({
-              name: nameCell,
-              sold: parseInt(cells[1]?.textContent?.trim() || '0') || 0,
-              accredited: parseInt(cells[2]?.textContent?.trim() || '0') || 0,
-              cancelled: parseInt(cells[3]?.textContent?.trim() || '0') || 0,
-              expected: parseInt(cells[4]?.textContent?.trim() || '0') || 0,
-              arrived: parseInt(cells[5]?.textContent?.trim() || '0') || 0,
-              waiting: parseInt(cells[6]?.textContent?.trim() || '0') || 0,
-              revenue: cells[7]?.textContent?.trim() || '0'
-            });
-          }
-        }
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString(),
+        credentials: 'include'
       });
 
-      // Calculate total tickets sold
-      const ticketsSold = ticketTypes.reduce((sum, t) => sum + t.sold, 0) || personCount;
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
 
-      return {
-        eventId: evtId,
-        customerId: custId,
-        eventName,
-        dateTime,
-        location,
-        ticketsSold,
-        totalRevenue: totalRevenueNum,
-        paidAmount: paidAmountNum,
-        outstanding: outstandingNum,
-        orderCount,
-        personCount,
-        ticketTypes,
-        isArchived,
-        extractedAt: new Date().toISOString()
-      };
-    }, { evtId: eventId, custId: customerId });
+      return response.json();
+    }, { customerId, archived, apiUrl: CONFIG.API_URL });
 
-    return eventData;
-  } catch (error) {
-    console.log(`   ⚠️ Failed to get details for event ${eventId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    return null;
+    return (response as CheckinApiResponse).data || [];
+  } finally {
+    await apiPage.close();
   }
+}
+
+async function getEventsForWorkspace(context: BrowserContext, workspace: Workspace): Promise<EventData[]> {
+  const events: EventData[] = [];
+
+  // Fetch active events
+  console.log(`   Fetching active events...`);
+  try {
+    const activeEvents = await fetchEventsFromApi(context, workspace.customerId, false);
+    console.log(`   Found ${activeEvents.length} active events from API`);
+
+    for (const event of activeEvents) {
+      events.push({
+        eventId: event.id.toString(),
+        customerId: workspace.customerId,
+        eventName: event.name,
+        dateTime: formatUnixTimestamp(event.start),
+        location: event.geo_description || '',
+        ticketsSold: event.attendees || 0,
+        totalRevenue: parseRevenue(event.turnover),
+        isArchived: false,
+        extractedAt: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.log(`   ⚠️ Failed to fetch active events: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+
+  return events;
 }
 
 async function sendToZapier(data: ExtractionResult): Promise<void> {
@@ -426,22 +346,10 @@ async function extractAllData(): Promise<ExtractionResult> {
     for (const workspace of workspaces) {
       console.log(`\n🏢 ${workspace.name} (ID: ${workspace.customerId})`);
 
-      const eventsList = await getEventsList(page, workspace.customerId);
-      console.log(`   Found ${eventsList.length} events`);
+      const events = await getEventsForWorkspace(context, workspace);
 
-      const events: EventData[] = [];
-
-      for (const eventInfo of eventsList) {
-        const eventData = await getEventDetails(page, workspace.customerId, eventInfo.eventId);
-        if (eventData) {
-          // Use name from list if detail page name is empty
-          if (!eventData.eventName) {
-            eventData.eventName = eventInfo.name;
-          }
-          eventData.isArchived = eventInfo.isArchived;
-          events.push(eventData);
-          console.log(`   ✓ ${eventData.eventName}: ${eventData.ticketsSold} tickets (NOK ${eventData.totalRevenue.toLocaleString('nb-NO')})`);
-        }
+      for (const event of events) {
+        console.log(`   ✓ ${event.eventName}: ${event.ticketsSold} tickets (NOK ${event.totalRevenue.toLocaleString('nb-NO')})`);
       }
 
       const workspaceData: WorkspaceData = {
@@ -468,7 +376,7 @@ async function extractAllData(): Promise<ExtractionResult> {
     );
 
     // Save CSV summary
-    const csvLines = ['Workspace,Event,Date,Location,Tickets Sold,Revenue,Paid,Outstanding,Orders,Persons,Archived'];
+    const csvLines = ['Workspace,Event,Date,Location,Tickets Sold,Revenue,Archived'];
     result.workspaces.forEach(workspace => {
       workspace.events.forEach(event => {
         csvLines.push([
@@ -477,11 +385,7 @@ async function extractAllData(): Promise<ExtractionResult> {
           `"${event.dateTime}"`,
           `"${event.location}"`,
           event.ticketsSold,
-          `"${event.totalRevenue}"`,
-          `"${event.paidAmount}"`,
-          `"${event.outstanding}"`,
-          event.orderCount,
-          event.personCount,
+          event.totalRevenue,
           event.isArchived
         ].join(','));
       });
