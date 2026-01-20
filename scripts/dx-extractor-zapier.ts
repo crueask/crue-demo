@@ -151,14 +151,17 @@ async function getShowDetails(page: Page, partnerId: string, renterId: string, s
   const url = getShowDetailUrl(partnerId, renterId, showId);
   await page.goto(url);
 
-  // Wait for page to load - try multiple selectors
+  // Wait for page to load - the show detail page has an h2 with the show title
+  // Also wait for the sales data to load (look for the sold/capacity pattern)
   try {
-    await page.waitForSelector('h2, h1, [class*="title"], [class*="header"]', { timeout: 15000 });
+    await page.waitForSelector('h2', { timeout: 15000 });
+    // Also wait for the page content to fully load
+    await page.waitForLoadState('domcontentloaded');
   } catch {
-    // If no header found, just wait for network idle
+    // If no h2 found, wait for network idle as fallback
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
   }
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(1500); // Give charts and dynamic content time to render
 
   const showData = await page.evaluate(() => {
     const bodyText = document.body.innerText;
@@ -227,6 +230,15 @@ async function getShowDetails(page: Page, partnerId: string, renterId: string, s
 async function extractVenueShows(page: Page, venue: Venue): Promise<ShowData[]> {
   const showsUrl = getVenueShowsUrl(venue.partnerId, venue.renterId);
   await page.goto(showsUrl);
+
+  // Wait for the shows table to load
+  try {
+    await page.waitForSelector('tr[role="link"], .shows-list-title', { timeout: 10000 });
+  } catch {
+    // No shows or table not loaded
+    console.log(`   No shows found (table not loaded)`);
+    return [];
+  }
   await page.waitForTimeout(1000);
 
   const showCount = await page.evaluate(() => {
@@ -243,30 +255,43 @@ async function extractVenueShows(page: Page, venue: Venue): Promise<ShowData[]> 
 
   for (let i = 0; i < showCount; i++) {
     await page.goto(showsUrl);
+
+    // Wait for rows to be present
+    await page.waitForSelector('tr[role="link"]', { timeout: 10000 });
     await page.waitForTimeout(500);
 
-    const navigated = await page.evaluate((index) => {
-      const rows = document.querySelectorAll('tr[role="link"]');
-      const row = rows[index] as HTMLElement & { [key: string]: unknown };
-      if (row) {
-        const key = Object.keys(row).find(k => k.startsWith('__reactEventHandlers'));
-        if (key) {
-          const handlers = row[key] as { onClick?: (e: object) => void };
-          if (handlers?.onClick) {
-            handlers.onClick({});
-            return true;
+    try {
+      // Use Playwright's native click - more reliable than React handler
+      const rowSelector = `tr[role="link"]:nth-child(${i + 1})`;
+      await page.click(rowSelector, { timeout: 5000 });
+
+      // Wait for navigation to show detail page
+      await page.waitForURL(/\/shows\/\d+$/, { timeout: 10000 });
+    } catch (clickError) {
+      // Fallback: try React handler approach
+      const navigated = await page.evaluate((index) => {
+        const rows = document.querySelectorAll('tr[role="link"]');
+        const row = rows[index] as HTMLElement & { [key: string]: unknown };
+        if (row) {
+          const key = Object.keys(row).find(k => k.startsWith('__reactEventHandlers'));
+          if (key) {
+            const handlers = row[key] as { onClick?: (e: object) => void };
+            if (handlers?.onClick) {
+              handlers.onClick({});
+              return true;
+            }
           }
         }
+        return false;
+      }, i);
+
+      if (!navigated) {
+        console.log(`   ⚠️ Could not click show ${i + 1}`);
+        continue;
       }
-      return false;
-    }, i);
 
-    if (!navigated) {
-      console.log(`   ⚠️ Could not click show ${i + 1}`);
-      continue;
+      await page.waitForTimeout(2000);
     }
-
-    await page.waitForTimeout(1500);
 
     const currentUrl = page.url();
     const showIdMatch = currentUrl.match(/shows\/(\d+)$/);
@@ -280,6 +305,8 @@ async function extractVenueShows(page: Page, venue: Venue): Promise<ShowData[]> 
       } catch (error) {
         console.log(`   ⚠️ Failed to extract show ${showIdMatch[1]}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
+    } else {
+      console.log(`   ⚠️ Navigation failed for show ${i + 1}, URL: ${currentUrl}`);
     }
   }
 
