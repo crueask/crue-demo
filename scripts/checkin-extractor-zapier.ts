@@ -53,6 +53,7 @@ interface EventData {
   eventId: string;
   customerId: string;
   eventName: string;
+  eventUrl: string;
   dateTime: string;
   location: string;
   ticketsSold: number;
@@ -179,6 +180,39 @@ function formatUnixTimestamp(timestamp: number): string {
   return `${day}.${month}.${year} ${hours}:${minutes}`;
 }
 
+async function getEventUrl(context: BrowserContext, customerId: string, eventId: string): Promise<string> {
+  // Navigate to the event admin page and get the public URL
+  const eventPage = await context.newPage();
+  try {
+    await eventPage.goto(`${CONFIG.BASE_URL}/customer/${customerId}/event/${eventId}`);
+    await eventPage.waitForTimeout(1500);
+
+    // Try to find the public event link on the page
+    const eventUrl = await eventPage.evaluate(() => {
+      // Look for links that point to /event/{id}/{slug}
+      const links = document.querySelectorAll('a[href*="/event/"]');
+      for (const link of links) {
+        const href = link.getAttribute('href') || '';
+        // Match pattern /event/{id}/{slug} (public URL format)
+        if (href.match(/\/event\/\d+\/[a-z0-9-]+$/i)) {
+          // Return full URL
+          if (href.startsWith('http')) {
+            return href;
+          }
+          return `https://app.checkin.no${href}`;
+        }
+      }
+      return '';
+    });
+
+    return eventUrl;
+  } catch {
+    return '';
+  } finally {
+    await eventPage.close();
+  }
+}
+
 async function fetchEventsFromApi(context: BrowserContext, customerId: string, archived: boolean = false): Promise<CheckinApiEvent[]> {
   // Create a new page to make the API request with cookies
   const apiPage = await context.newPage();
@@ -232,10 +266,14 @@ async function getEventsForWorkspace(context: BrowserContext, workspace: Workspa
     console.log(`   Found ${activeEvents.length} active events from API`);
 
     for (const event of activeEvents) {
+      // Fetch the public event URL
+      const eventUrl = await getEventUrl(context, workspace.customerId, event.id.toString());
+
       events.push({
         eventId: event.id.toString(),
         customerId: workspace.customerId,
         eventName: event.name,
+        eventUrl: eventUrl,
         dateTime: formatUnixTimestamp(event.start),
         location: event.geo_description || '',
         ticketsSold: event.attendees || 0,
@@ -349,7 +387,7 @@ async function extractAllData(): Promise<ExtractionResult> {
       const events = await getEventsForWorkspace(context, workspace);
 
       for (const event of events) {
-        console.log(`   ✓ ${event.eventName}: ${event.ticketsSold} tickets (NOK ${event.totalRevenue.toLocaleString('nb-NO')})`);
+        console.log(`   ✓ ${event.eventName}: ${event.ticketsSold} tickets (NOK ${event.totalRevenue.toLocaleString('nb-NO')}) - ${event.eventUrl}`);
       }
 
       const workspaceData: WorkspaceData = {
@@ -376,12 +414,13 @@ async function extractAllData(): Promise<ExtractionResult> {
     );
 
     // Save CSV summary
-    const csvLines = ['Workspace,Event,Date,Location,Tickets Sold,Revenue,Archived'];
+    const csvLines = ['Workspace,Event,URL,Date,Location,Tickets Sold,Revenue,Archived'];
     result.workspaces.forEach(workspace => {
       workspace.events.forEach(event => {
         csvLines.push([
           `"${workspace.name}"`,
           `"${event.eventName}"`,
+          `"${event.eventUrl}"`,
           `"${event.dateTime}"`,
           `"${event.location}"`,
           event.ticketsSold,
