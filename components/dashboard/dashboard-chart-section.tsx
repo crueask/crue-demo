@@ -22,6 +22,7 @@ import {
   daysBetween,
 } from "@/lib/chart-utils";
 import { getTotalAdSpend, applyMva } from "@/lib/ad-spend";
+import { ChartSkeleton, LegendSkeleton } from "@/components/ui/chart-skeleton";
 
 interface Project {
   id: string;
@@ -438,9 +439,10 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
       </div>
 
       {loading ? (
-        <div className="h-[280px] flex items-center justify-center text-sm text-gray-500">
-          Laster graf...
-        </div>
+        <>
+          <ChartSkeleton height={280} />
+          <LegendSkeleton itemCount={Math.min(projects.length, 6)} />
+        </>
       ) : (
         <TicketsByTourChart
           data={chartData}

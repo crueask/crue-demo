@@ -329,41 +329,43 @@ export function TicketsByTourChart({
 
       {/* Legend */}
       {projects.length > 0 && (
-        <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t border-gray-100">
-          {projects.map((project, index) => (
-            <div key={project.id} className="flex items-center gap-2">
-              <div
-                className="w-3 h-3 rounded-sm"
-                style={{ backgroundColor: PROJECT_COLORS[index % PROJECT_COLORS.length] }}
-              />
-              <span className="text-xs text-gray-600">{project.name}</span>
-            </div>
-          ))}
-          {/* Estimated indicator - only show if there's estimated data */}
-          {showEstimatedLegend && (
-            <div className="flex items-center gap-2 ml-2 pl-4 border-l border-gray-200">
-              <div
-                className="w-3 h-3 rounded-sm"
-                style={{
-                  backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(107, 114, 128, 0.4) 2px, rgba(107, 114, 128, 0.4) 4px)',
-                  backgroundColor: 'rgba(107, 114, 128, 0.15)',
-                }}
-              />
-              <span className="text-xs text-gray-500 italic">Estimert</span>
-            </div>
-          )}
-          {/* Ad spend indicator */}
-          {hasAdSpendData && (
-            <div className="flex items-center gap-2 ml-2 pl-4 border-l border-gray-200">
-              <div
-                className="w-3 h-0.5"
-                style={{ backgroundColor: AD_SPEND_COLOR }}
-              />
-              <span className="text-xs" style={{ color: AD_SPEND_COLOR }}>
-                Annonsekostnad{includeMva ? ' (inkl. mva)' : ' (eks. mva)'}
-              </span>
-            </div>
-          )}
+        <div className="overflow-x-auto scrollbar-hide mt-4 pt-4 border-t border-gray-100">
+          <div className="flex items-center gap-4 flex-nowrap min-w-max">
+            {projects.map((project, index) => (
+              <div key={project.id} className="flex items-center gap-2 flex-shrink-0">
+                <div
+                  className="w-3 h-3 rounded-sm"
+                  style={{ backgroundColor: PROJECT_COLORS[index % PROJECT_COLORS.length] }}
+                />
+                <span className="text-xs text-gray-600 whitespace-nowrap">{project.name}</span>
+              </div>
+            ))}
+            {/* Estimated indicator - only show if there's estimated data */}
+            {showEstimatedLegend && (
+              <div className="flex items-center gap-2 ml-2 pl-4 border-l border-gray-200 flex-shrink-0">
+                <div
+                  className="w-3 h-3 rounded-sm"
+                  style={{
+                    backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(107, 114, 128, 0.4) 2px, rgba(107, 114, 128, 0.4) 4px)',
+                    backgroundColor: 'rgba(107, 114, 128, 0.15)',
+                  }}
+                />
+                <span className="text-xs text-gray-500 italic whitespace-nowrap">Estimert</span>
+              </div>
+            )}
+            {/* Ad spend indicator */}
+            {hasAdSpendData && (
+              <div className="flex items-center gap-2 ml-2 pl-4 border-l border-gray-200 flex-shrink-0">
+                <div
+                  className="w-3 h-0.5"
+                  style={{ backgroundColor: AD_SPEND_COLOR }}
+                />
+                <span className="text-xs whitespace-nowrap" style={{ color: AD_SPEND_COLOR }}>
+                  Annonsekostnad{includeMva ? ' (inkl. mva)' : ' (eks. mva)'}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -402,41 +402,43 @@ export function TicketsChart({
 
       {/* Legend */}
       {(entities.length > 1 || showEstimatedLegend || hasAdSpendData) && (
-        <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-gray-100">
-          {entities.length > 1 && entities.map((entity, index) => (
-            <div key={entity.id} className="flex items-center gap-1.5">
-              <div
-                className="w-2.5 h-2.5 rounded-sm"
-                style={{ backgroundColor: ENTITY_COLORS[index % ENTITY_COLORS.length] }}
-              />
-              <span className="text-xs text-gray-600">{entity.name}</span>
-            </div>
-          ))}
-          {/* Estimated indicator - only show if there's estimated data */}
-          {showEstimatedLegend && (
-            <div className="flex items-center gap-1.5 ml-2 pl-3 border-l border-gray-200">
-              <div
-                className="w-2.5 h-2.5 rounded-sm"
-                style={{
-                  backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(107, 114, 128, 0.4) 2px, rgba(107, 114, 128, 0.4) 4px)',
-                  backgroundColor: 'rgba(107, 114, 128, 0.15)',
-                }}
-              />
-              <span className="text-xs text-gray-500 italic">Estimert</span>
-            </div>
-          )}
-          {/* Ad spend indicator */}
-          {hasAdSpendData && (
-            <div className="flex items-center gap-1.5 ml-2 pl-3 border-l border-gray-200">
-              <div
-                className="w-2.5 h-0.5"
-                style={{ backgroundColor: AD_SPEND_COLOR }}
-              />
-              <span className="text-xs" style={{ color: AD_SPEND_COLOR }}>
-                Annonsekostnad{includeMva ? ' (inkl. mva)' : ' (eks. mva)'}
-              </span>
-            </div>
-          )}
+        <div className="overflow-x-auto scrollbar-hide mt-3 pt-3 border-t border-gray-100">
+          <div className="flex items-center gap-3 flex-nowrap min-w-max">
+            {entities.length > 1 && entities.map((entity, index) => (
+              <div key={entity.id} className="flex items-center gap-1.5 flex-shrink-0">
+                <div
+                  className="w-2.5 h-2.5 rounded-sm"
+                  style={{ backgroundColor: ENTITY_COLORS[index % ENTITY_COLORS.length] }}
+                />
+                <span className="text-xs text-gray-600 whitespace-nowrap">{entity.name}</span>
+              </div>
+            ))}
+            {/* Estimated indicator - only show if there's estimated data */}
+            {showEstimatedLegend && (
+              <div className="flex items-center gap-1.5 ml-2 pl-3 border-l border-gray-200 flex-shrink-0">
+                <div
+                  className="w-2.5 h-2.5 rounded-sm"
+                  style={{
+                    backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(107, 114, 128, 0.4) 2px, rgba(107, 114, 128, 0.4) 4px)',
+                    backgroundColor: 'rgba(107, 114, 128, 0.15)',
+                  }}
+                />
+                <span className="text-xs text-gray-500 italic whitespace-nowrap">Estimert</span>
+              </div>
+            )}
+            {/* Ad spend indicator */}
+            {hasAdSpendData && (
+              <div className="flex items-center gap-1.5 ml-2 pl-3 border-l border-gray-200 flex-shrink-0">
+                <div
+                  className="w-2.5 h-0.5"
+                  style={{ backgroundColor: AD_SPEND_COLOR }}
+                />
+                <span className="text-xs whitespace-nowrap" style={{ color: AD_SPEND_COLOR }}>
+                  Annonsekostnad{includeMva ? ' (inkl. mva)' : ' (eks. mva)'}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
