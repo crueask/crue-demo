@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Users } from "lucide-react";
+import { Plus, Trash2, Users, AlertTriangle } from "lucide-react";
 import { getSourceLabel } from "@/lib/ad-spend";
 import { CampaignLinkingDialog } from "./campaign-linking-dialog";
 
@@ -15,6 +15,7 @@ interface Connection {
   source: string;
   campaign: string;
   adset_id: string | null;
+  adset_name?: string | null;
   allocation_percent: number;
 }
 
@@ -55,9 +56,31 @@ export function StopAdConnections({
       const response = await fetch(`/api/stop-ad-connections?stopId=${stopId}`);
       const data = await response.json();
       if (data.connections) {
-        setConnections(data.connections);
+        // Fetch adset names for adset-type connections
+        const connectionsWithNames = await Promise.all(
+          data.connections.map(async (conn: Connection) => {
+            if (conn.connection_type === "adset" && conn.adset_id) {
+              // Look up the adset name from facebook_ads
+              const { data: adsetData } = await supabase
+                .from("facebook_ads")
+                .select("adset_name")
+                .eq("source", conn.source)
+                .eq("campaign", conn.campaign)
+                .eq("adset_id", conn.adset_id)
+                .limit(1)
+                .single();
+
+              return {
+                ...conn,
+                adset_name: adsetData?.adset_name || null,
+              };
+            }
+            return conn;
+          })
+        );
+        setConnections(connectionsWithNames);
         // Fetch shared stops for each connection
-        await fetchSharedStops(data.connections);
+        await fetchSharedStops(connectionsWithNames);
       }
     } catch (error) {
       console.error("Error fetching connections:", error);
@@ -93,9 +116,9 @@ export function StopAdConnections({
       if (data) {
         shared[key] = data
           .filter((row: { stop_id: string }) => row.stop_id !== stopId)
-          .map((row: { stop_id: string; allocation_percent: number; stops: { name: string }[] }) => ({
+          .map((row: { stop_id: string; allocation_percent: number; stops: { name: string } | { name: string }[] }) => ({
             stopId: row.stop_id,
-            stopName: row.stops[0]?.name || "Ukjent",
+            stopName: Array.isArray(row.stops) ? (row.stops[0]?.name || "Ukjent") : (row.stops?.name || "Ukjent"),
             allocationPercent: Number(row.allocation_percent),
           }));
       }
@@ -167,6 +190,13 @@ export function StopAdConnections({
     return sharedStops[key] || [];
   };
 
+  // Calculate total allocation for a connection (including this stop and all shared stops)
+  const getTotalAllocation = (conn: Connection): number => {
+    const shared = getSharedStopsForConnection(conn);
+    const sharedTotal = shared.reduce((sum, s) => sum + s.allocationPercent, 0);
+    return conn.allocation_percent + sharedTotal;
+  };
+
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-3">
@@ -198,11 +228,17 @@ export function StopAdConnections({
           {connections.map((conn) => {
             const shared = getSharedStopsForConnection(conn);
             const isEditing = editingId === conn.id;
+            const totalAllocation = getTotalAllocation(conn);
+            const allocationIsValid = Math.abs(totalAllocation - 100) < 0.1; // Allow small floating point errors
 
             return (
               <div
                 key={conn.id}
-                className="flex items-start justify-between p-3 border border-gray-100 rounded-lg bg-gray-50/50"
+                className={`flex items-start justify-between p-3 border rounded-lg ${
+                  !allocationIsValid && shared.length > 0
+                    ? "border-amber-300 bg-amber-50/50"
+                    : "border-gray-100 bg-gray-50/50"
+                }`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
@@ -219,7 +255,7 @@ export function StopAdConnections({
                     </span>
                     {conn.connection_type === "adset" && conn.adset_id && (
                       <span className="text-xs text-gray-400">
-                        ({conn.adset_id})
+                        ({conn.adset_name || conn.adset_id})
                       </span>
                     )}
                   </div>
@@ -227,7 +263,15 @@ export function StopAdConnections({
                     <div className="flex items-center gap-1 mt-1.5 text-xs text-amber-600">
                       <Users className="h-3 w-3" />
                       <span>
-                        Delt med {shared.map(s => s.stopName).join(", ")}
+                        Delt med {shared.map(s => `${s.stopName} (${s.allocationPercent.toFixed(1)}%)`).join(", ")}
+                      </span>
+                    </div>
+                  )}
+                  {shared.length > 0 && !allocationIsValid && (
+                    <div className="flex items-center gap-1 mt-1 text-xs text-amber-700">
+                      <AlertTriangle className="h-3 w-3" />
+                      <span>
+                        Total fordeling: {totalAllocation.toFixed(1)}% (må være 100%)
                       </span>
                     </div>
                   )}
