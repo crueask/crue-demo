@@ -180,25 +180,77 @@ function formatUnixTimestamp(timestamp: number): string {
   return `${day}.${month}.${year} ${hours}:${minutes}`;
 }
 
-function generateSlug(name: string): string {
-  // Convert event name to URL-friendly slug
-  // "Presale Standup med Jonis Josef" -> "presale-standup-med-jonis-josef"
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
-    .replace(/[æ]/g, 'ae')
-    .replace(/[ø]/g, 'o')
-    .replace(/[å]/g, 'a')
-    .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
-    .replace(/\s+/g, '-') // Replace spaces with hyphens
-    .replace(/-+/g, '-') // Replace multiple hyphens with single
-    .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
-}
+async function getEventUrl(context: BrowserContext, customerId: string, eventId: string): Promise<string> {
+  const eventPage = await context.newPage();
+  try {
+    await eventPage.goto(`${CONFIG.BASE_URL}/customer/${customerId}/event/${eventId}`);
+    await eventPage.waitForTimeout(2000);
 
-function buildEventUrl(eventId: string, eventName: string): string {
-  const slug = generateSlug(eventName);
-  return `https://app.checkin.no/event/${eventId}/${slug}`;
+    // Find the "Se påmeldingen" button/link and get its href or the URL it opens
+    const eventUrl = await eventPage.evaluate(() => {
+      // Look for the button with "Se påmeldingen" text
+      const buttons = document.querySelectorAll('span.btn, a.btn, button');
+      for (const btn of buttons) {
+        if (btn.textContent?.includes('Se påmeldingen')) {
+          // Check if it's a link
+          const link = btn.closest('a') || btn.querySelector('a');
+          if (link) {
+            const href = link.getAttribute('href') || '';
+            if (href.startsWith('http')) return href;
+            if (href.startsWith('/')) return `https://app.checkin.no${href}`;
+          }
+          // Check for onclick or data attributes
+          const parent = btn.parentElement;
+          if (parent?.tagName === 'A') {
+            const href = parent.getAttribute('href') || '';
+            if (href.startsWith('http')) return href;
+            if (href.startsWith('/')) return `https://app.checkin.no${href}`;
+          }
+        }
+      }
+
+      // Fallback: look for any link with /event/{id}/{slug} pattern
+      const links = document.querySelectorAll('a[href*="/event/"]');
+      for (const link of links) {
+        const href = link.getAttribute('href') || '';
+        if (href.match(/\/event\/\d+\/[a-z0-9-]+/i)) {
+          if (href.startsWith('http')) return href;
+          return `https://app.checkin.no${href}`;
+        }
+      }
+
+      return '';
+    });
+
+    // If we found a URL, return it
+    if (eventUrl) {
+      return eventUrl;
+    }
+
+    // Try clicking the button and capturing the new page URL
+    const button = await eventPage.$('span:has-text("Se påmeldingen"), a:has-text("Se påmeldingen")');
+    if (button) {
+      // Listen for new page/popup
+      const [newPage] = await Promise.all([
+        context.waitForEvent('page', { timeout: 5000 }).catch(() => null),
+        button.click()
+      ]);
+
+      if (newPage) {
+        await newPage.waitForLoadState('domcontentloaded');
+        const url = newPage.url();
+        await newPage.close();
+        return url;
+      }
+    }
+
+    return '';
+  } catch (error) {
+    console.log(`   ⚠️ Could not get URL for event ${eventId}`);
+    return '';
+  } finally {
+    await eventPage.close();
+  }
 }
 
 async function fetchEventsFromApi(context: BrowserContext, customerId: string, archived: boolean = false): Promise<CheckinApiEvent[]> {
@@ -254,11 +306,14 @@ async function getEventsForWorkspace(context: BrowserContext, workspace: Workspa
     console.log(`   Found ${activeEvents.length} active events from API`);
 
     for (const event of activeEvents) {
+      // Fetch the actual public event URL from the event page
+      const eventUrl = await getEventUrl(context, workspace.customerId, event.id.toString());
+
       events.push({
         eventId: event.id.toString(),
         customerId: workspace.customerId,
         eventName: event.name,
-        eventUrl: buildEventUrl(event.id.toString(), event.name),
+        eventUrl: eventUrl,
         dateTime: formatUnixTimestamp(event.start),
         location: event.geo_description || '',
         ticketsSold: event.attendees || 0,
