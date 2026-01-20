@@ -357,9 +357,12 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
     if (ticketSnapshots && ticketSnapshots.length > 0) {
       const salesStartDate = show.sales_start_date;
 
+      // Helper to get the effective sales date from a ticket
+      // Reports received on a given day represent sales from the previous day
       const getEffectiveSalesDate = (ticket: { sale_date: string | null; reported_at: string | null }): string | null => {
         if (ticket.sale_date) return ticket.sale_date;
         if (ticket.reported_at) {
+          // Subtract one day from reported_at to get actual sales date
           return addDays(ticket.reported_at.split('T')[0], -1);
         }
         return null;
@@ -383,9 +386,12 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
           }
         }
       } else {
+        // Handle multiple reports - distribute deltas between consecutive reports
+        // Only use salesStartDate for distribution if it exists
         let previousDate: string | null = salesStartDate;
         let previousTotal = 0;
-        let hasBaseline = !!salesStartDate;
+        let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
+        let previousDateIsSalesStart = !!salesStartDate; // Track if previousDate came from salesStartDate vs a report
 
         for (let i = 0; i < ticketSnapshots.length; i++) {
           const ticket = ticketSnapshots[i];
@@ -394,29 +400,41 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
 
           const delta = ticket.quantity_sold - previousTotal;
 
+          // For the first report without salesStartDate, we can't show anything
+          // (we don't know when sales started, so no baseline to compare against)
+          // But we establish the baseline for subsequent reports
           if (!hasBaseline) {
             previousTotal = ticket.quantity_sold;
             previousDate = ticketDate;
-            hasBaseline = true;
+            hasBaseline = true; // Now we have a baseline for future reports
+            previousDateIsSalesStart = false; // This date came from a report, not salesStartDate
             continue;
           }
 
+          // Skip if delta is 0 or negative (no new tickets sold)
+          // But still update tracking variables
           if (delta <= 0) {
             previousTotal = ticket.quantity_sold;
             previousDate = ticketDate;
+            previousDateIsSalesStart = false;
             continue;
           }
 
+          // Only distribute if we have a valid previous date that's before the current date
           const canDistribute = previousDate && previousDate < ticketDate;
 
           if (!canDistribute) {
+            // No distribution - show actual on effective sales date
             distributedData.push({
               date: ticketDate,
               tickets: delta,
               isEstimated: false,
             });
           } else {
-            const totalDays = daysBetween(previousDate!, ticketDate) + 1;
+            // If previousDate came from a report (not salesStartDate), start distribution from day after
+            // because the report date's sales are already accounted for in the cumulative total
+            const distributionStartDate = previousDateIsSalesStart ? previousDate! : addDays(previousDate!, 1);
+            const totalDays = daysBetween(distributionStartDate, ticketDate) + 1;
 
             if (totalDays <= 1) {
               distributedData.push({
@@ -428,7 +446,7 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
               const ticketsPerDay = delta / totalDays;
 
               for (let j = 0; j < totalDays; j++) {
-                const date = addDays(previousDate!, j);
+                const date = addDays(distributionStartDate, j);
                 const isLastDay = j === totalDays - 1;
                 distributedData.push({
                   date,
@@ -441,6 +459,7 @@ export function SharedStopAccordion({ stop }: SharedStopAccordionProps) {
 
           previousTotal = ticket.quantity_sold;
           previousDate = ticketDate;
+          previousDateIsSalesStart = false; // From now on, previousDate is always a report date
         }
       }
     }
