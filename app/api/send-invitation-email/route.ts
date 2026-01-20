@@ -6,9 +6,12 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, projectName, inviterEmail, role, token } = body;
+    const { email, to, projectName, inviterEmail, role, token } = body;
 
-    if (!email || !projectName || !token) {
+    // Accept either 'email' or 'to' field
+    const recipientEmail = email || to;
+
+    if (!recipientEmail || !projectName || !token) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -31,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await resend.emails.send({
       from: "Crue <noreply@crue.no>",
-      to: [email],
+      to: [recipientEmail],
       subject: `Du er invitert til ${projectName} på Crue`,
       html: `
         <!DOCTYPE html>
