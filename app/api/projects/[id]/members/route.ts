@@ -103,7 +103,9 @@ export async function GET(
     const canManage = await canManageProjectMembers(supabase, projectId);
 
     if (canManage) {
-      const { data: invitationsData } = await supabase
+      // Use admin client to bypass RLS for fetching invitations
+      const adminClient = createAdminClient();
+      const { data: invitationsData } = await adminClient
         .from("project_invitations")
         .select("*")
         .eq("project_id", projectId)
