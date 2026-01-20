@@ -165,7 +165,31 @@ async function getShowDetails(page: Page, partnerId: string, renterId: string, s
 
   const showData = await page.evaluate(() => {
     const bodyText = document.body.innerText;
-    const showName = document.querySelector('h2')?.textContent?.trim() || '';
+
+    // Try multiple selectors for show name - h2 is primary, but try alternatives
+    let showName = document.querySelector('h2')?.textContent?.trim() || '';
+
+    // If h2 is empty or very short, try h1 or other title elements
+    if (!showName || showName.length < 2) {
+      showName = document.querySelector('h1')?.textContent?.trim() || '';
+    }
+    if (!showName || showName.length < 2) {
+      // Try finding a prominent title-like element
+      showName = document.querySelector('[class*="title"]')?.textContent?.trim() || '';
+    }
+    if (!showName || showName.length < 2) {
+      // Last resort: try to extract from page title or first significant text
+      const mainContent = document.querySelector('main, [role="main"], .content');
+      if (mainContent) {
+        const firstHeading = mainContent.querySelector('h1, h2, h3');
+        showName = firstHeading?.textContent?.trim() || '';
+      }
+    }
+
+    // Debug: log what we found
+    console.log('DEBUG - h2 elements found:', document.querySelectorAll('h2').length);
+    console.log('DEBUG - h2 text:', document.querySelector('h2')?.textContent);
+    console.log('DEBUG - page title:', document.title);
 
     const startMatch = bodyText.match(/Start\s+(\d+\.\s+\w+\s+\d+)\s+kl\.\s+(\d+:\d+)/);
     const endMatch = bodyText.match(/Slutt\s+(\d+\.\s+\w+\s+\d+)\s+kl\.\s+(\d+:\d+)/);
