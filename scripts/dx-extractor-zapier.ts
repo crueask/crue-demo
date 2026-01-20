@@ -151,14 +151,12 @@ async function getShowDetails(page: Page, partnerId: string, renterId: string, s
   const url = getShowDetailUrl(partnerId, renterId, showId);
   await page.goto(url);
 
-  // Wait for page to load - the show detail page has an h2 with the show title
-  // Also wait for the sales data to load (look for the sold/capacity pattern)
+  // Wait for page to load - the show detail page has h1.dx-header with the show title
   try {
-    await page.waitForSelector('h2', { timeout: 15000 });
-    // Also wait for the page content to fully load
+    await page.waitForSelector('h1.dx-header', { timeout: 15000 });
     await page.waitForLoadState('domcontentloaded');
   } catch {
-    // If no h2 found, wait for network idle as fallback
+    // If no header found, wait for network idle as fallback
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
   }
   await page.waitForTimeout(1500); // Give charts and dynamic content time to render
@@ -166,41 +164,8 @@ async function getShowDetails(page: Page, partnerId: string, renterId: string, s
   const showData = await page.evaluate(() => {
     const bodyText = document.body.innerText;
 
-    // Common UI words to filter out - these are not show names
-    const uiWords = ['filter', 'søk', 'search', 'menu', 'meny', 'logg', 'login', 'logout'];
-    const isUIElement = (text: string) => {
-      const lower = text.toLowerCase();
-      return uiWords.some(word => lower === word || lower.includes(word + ' ') || lower.startsWith(word));
-    };
-
-    // Try to find show name from h2 elements - skip UI elements
-    let showName = '';
-    const h2Elements = document.querySelectorAll('h2');
-    for (const h2 of h2Elements) {
-      const text = h2.textContent?.trim() || '';
-      if (text.length > 2 && !isUIElement(text)) {
-        showName = text;
-        break;
-      }
-    }
-
-    // If no valid h2, try h1
-    if (!showName) {
-      const h1Elements = document.querySelectorAll('h1');
-      for (const h1 of h1Elements) {
-        const text = h1.textContent?.trim() || '';
-        if (text.length > 2 && !isUIElement(text)) {
-          showName = text;
-          break;
-        }
-      }
-    }
-
-    // Debug: log all h2 texts to help diagnose
-    const h2Texts = Array.from(document.querySelectorAll('h2')).map(h => h.textContent?.trim());
-    console.log('DEBUG - all h2 texts:', JSON.stringify(h2Texts));
-    console.log('DEBUG - selected showName:', showName);
-    console.log('DEBUG - page title:', document.title);
+    // The show title is in h1.dx-header
+    const showName = document.querySelector('h1.dx-header')?.textContent?.trim() || '';
 
     const startMatch = bodyText.match(/Start\s+(\d+\.\s+\w+\s+\d+)\s+kl\.\s+(\d+:\d+)/);
     const endMatch = bodyText.match(/Slutt\s+(\d+\.\s+\w+\s+\d+)\s+kl\.\s+(\d+:\d+)/);
