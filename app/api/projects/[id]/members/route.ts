@@ -80,28 +80,33 @@ export async function GET(
     // Use admin client for fetching members and invitations (bypasses RLS)
     const adminClient = createAdminClient();
 
-    // Get project members with user profiles
-    const { data: members, error: membersError } = await adminClient
+    // Get project members
+    const { data: membersRaw, error: membersError } = await adminClient
       .from("project_members")
-      .select(`
-        id,
-        project_id,
-        user_id,
-        role,
-        invited_by,
-        created_at,
-        user_profiles (
-          email,
-          display_name
-        )
-      `)
+      .select("id, project_id, user_id, role, invited_by, created_at")
       .eq("project_id", projectId);
 
     if (membersError) {
       console.error("Error fetching members:", membersError);
     }
 
-    // Debug: log the members data
+    // Fetch user profiles for members
+    let members: any[] = [];
+    if (membersRaw && membersRaw.length > 0) {
+      const userIds = membersRaw.map(m => m.user_id);
+      const { data: profiles } = await adminClient
+        .from("user_profiles")
+        .select("id, email, display_name")
+        .in("id", userIds);
+
+      const profilesMap = new Map(profiles?.map(p => [p.id, p]) || []);
+
+      members = membersRaw.map(m => ({
+        ...m,
+        user_profiles: profilesMap.get(m.user_id) || null,
+      }));
+    }
+
     console.log("Project members for", projectId, ":", JSON.stringify(members, null, 2));
 
     // Get pending invitations (only if user can manage)
@@ -121,19 +126,27 @@ export async function GET(
     }
 
     // Get organization members (they have implicit access)
-    const { data: orgMembers } = await supabase
+    const { data: orgMembersRaw } = await adminClient
       .from("organization_members")
-      .select(`
-        id,
-        user_id,
-        role,
-        created_at,
-        user_profiles!organization_members_user_id_fkey (
-          email,
-          display_name
-        )
-      `)
+      .select("id, user_id, role, created_at")
       .eq("organization_id", project.organization_id);
+
+    // Fetch user profiles for org members
+    let orgMembers: any[] = [];
+    if (orgMembersRaw && orgMembersRaw.length > 0) {
+      const orgUserIds = orgMembersRaw.map(m => m.user_id);
+      const { data: orgProfiles } = await adminClient
+        .from("user_profiles")
+        .select("id, email, display_name")
+        .in("id", orgUserIds);
+
+      const orgProfilesMap = new Map(orgProfiles?.map(p => [p.id, p]) || []);
+
+      orgMembers = orgMembersRaw.map(m => ({
+        ...m,
+        user_profiles: orgProfilesMap.get(m.user_id) || null,
+      }));
+    }
 
     return NextResponse.json({
       projectMembers: members || [],
