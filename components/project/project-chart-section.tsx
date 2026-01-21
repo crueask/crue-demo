@@ -232,6 +232,14 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
           }
 
           if (delta <= 0) {
+            // Still record a 0-value entry so the report shows as received (not missing)
+            distributedData.push({
+              date: ticketDate,
+              entityId,
+              value: 0,
+              revenue: 0,
+              isEstimated: false,
+            });
             previousValue = currentValue;
             previousRevenue = currentRevenue;
             previousDate = ticketDate;
@@ -347,14 +355,15 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
 
           if (upcomingShowsWithSalesStarted.length === 0) continue;
 
-          // Check if stop has any data for this date
+          // Check if stop has any data or a report for this date
           const entityId = filteringToShows
             ? upcomingShowsWithSalesStarted[0].id
             : stop.id;
           const hasData = entityData[entityId]?.actual > 0 ||
                           entityData[entityId]?.estimated > 0;
+          const hasReport = reportDatesByEntity[entityId]?.has(date);
 
-          if (!hasData) {
+          if (!hasData && !hasReport) {
             // Get the earliest upcoming show
             const nextShow = upcomingShowsWithSalesStarted
               .sort((a, b) => a.date.localeCompare(b.date))[0];

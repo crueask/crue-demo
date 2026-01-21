@@ -27,6 +27,7 @@ import { StopAccordion } from "@/components/project/stop-accordion";
 import { ShareDialog } from "@/components/project/share-dialog";
 import { ProjectChartSection } from "@/components/project/project-chart-section";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { MotleyContainer } from "@/components/motley";
 
 interface Project {
   id: string;
@@ -391,6 +392,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           }))}
         />
       )}
+
+      {/* Motley AI Chat */}
+      <MotleyContainer
+        context={{
+          type: "project",
+          projectId: id,
+          projectName: project.name,
+        }}
+        stops={stops.map((s) => ({
+          id: s.id,
+          name: s.name,
+          city: s.city,
+        }))}
+      />
 
       {/* Turnéstopp section */}
       <div className="space-y-4">

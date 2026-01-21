@@ -1,0 +1,255 @@
+"use client";
+
+import { useState, useCallback, useRef, useEffect } from "react";
+import { MotleySearchBar } from "./motley-search-bar";
+import { MotleyMessages, Message, ThinkingStep } from "./motley-messages";
+import { MotleySuggestions } from "./motley-suggestions";
+import { ChartConfig } from "@/lib/ai/motley-tools";
+
+interface MotleyContainerProps {
+  context: {
+    type: "organization" | "project";
+    projectId?: string;
+    projectName?: string;
+  };
+  stops?: Array<{
+    id: string;
+    name: string;
+    city?: string;
+  }>;
+}
+
+export function MotleyContainer({ context, stops }: MotleyContainerProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Generate context-aware suggestions
+  const suggestions = context.type === "project"
+    ? [
+        "How are ticket sales trending?",
+        "What's my ROAS for this project?",
+        stops?.length ? `Compare ${stops.slice(0, 2).map(s => s.name).join(" and ")}` : "Compare stops",
+        "When should I reduce ad spend?",
+      ]
+    : [
+        "Compare all my projects",
+        "What's my overall ROAS?",
+        "Which project needs attention?",
+        "Show me revenue trends",
+      ];
+
+  const handleSubmit = useCallback(async (input: string) => {
+    if (isProcessing || !input.trim()) return;
+
+    // Add user message
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: input,
+    };
+    setMessages(prev => [...prev, userMessage]);
+    setIsProcessing(true);
+    setThinkingSteps([]);
+
+    // Create abort controller for this request
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch("/api/motley", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [...messages, userMessage].map(m => ({
+            role: m.role,
+            content: m.content,
+          })),
+          context,
+        }),
+        signal: abortControllerRef.current.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let assistantContent = "";
+      const charts: ChartConfig[] = [];
+      const currentThinkingSteps: ThinkingStep[] = [];
+
+      // Create assistant message placeholder
+      const assistantMessageId = (Date.now() + 1).toString();
+      setMessages(prev => [...prev, {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "",
+        isStreaming: true,
+      }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              switch (data.type) {
+                case "text":
+                  assistantContent += data.content;
+                  setMessages(prev => prev.map(m =>
+                    m.id === assistantMessageId
+                      ? { ...m, content: assistantContent }
+                      : m
+                  ));
+                  break;
+
+                case "tool_call":
+                  const step: ThinkingStep = {
+                    id: Date.now().toString(),
+                    type: "tool_call",
+                    title: getToolDisplayName(data.toolName),
+                    toolName: data.toolName,
+                    status: "running",
+                  };
+                  currentThinkingSteps.push(step);
+                  setThinkingSteps([...currentThinkingSteps]);
+                  break;
+
+                case "chart":
+                  // Mark last thinking step as complete
+                  if (currentThinkingSteps.length > 0) {
+                    currentThinkingSteps[currentThinkingSteps.length - 1].status = "complete";
+                    setThinkingSteps([...currentThinkingSteps]);
+                  }
+                  charts.push(data.config as ChartConfig);
+                  setMessages(prev => prev.map(m =>
+                    m.id === assistantMessageId
+                      ? { ...m, charts: [...charts] }
+                      : m
+                  ));
+                  break;
+
+                case "done":
+                  // Mark all steps complete
+                  currentThinkingSteps.forEach(s => s.status = "complete");
+                  setThinkingSteps([...currentThinkingSteps]);
+
+                  // Mark streaming complete
+                  setMessages(prev => prev.map(m =>
+                    m.id === assistantMessageId
+                      ? { ...m, isStreaming: false, thinkingSteps: currentThinkingSteps }
+                      : m
+                  ));
+                  break;
+
+                case "error":
+                  throw new Error(data.message);
+              }
+            } catch (e) {
+              // Skip invalid JSON lines
+              if (line.trim() && !line.includes("[DONE]")) {
+                console.warn("Failed to parse SSE data:", e);
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      if ((error as Error).name === "AbortError") {
+        console.log("Request was cancelled");
+      } else {
+        console.error("Motley error:", error);
+        // Add error message
+        setMessages(prev => [...prev, {
+          id: (Date.now() + 2).toString(),
+          role: "assistant",
+          content: "I encountered an error while processing your request. Please try again.",
+        }]);
+      }
+    } finally {
+      setIsProcessing(false);
+      abortControllerRef.current = null;
+    }
+  }, [messages, context, isProcessing]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-400 via-pink-400 to-blue-400 flex items-center justify-center">
+            <span className="text-white text-xs font-bold">M</span>
+          </div>
+          <h3 className="font-semibold text-gray-900">Motley</h3>
+          <span className="text-xs text-gray-500">AI Business Intelligence</span>
+        </div>
+      </div>
+
+      {/* Search Bar */}
+      <div className="p-4">
+        <MotleySearchBar
+          onSubmit={handleSubmit}
+          isProcessing={isProcessing}
+          placeholder={
+            context.type === "project"
+              ? `Ask Motley about ${context.projectName || "this project"}...`
+              : "Ask Motley about your data..."
+          }
+        />
+      </div>
+
+      {/* Suggestions (only show when no messages) */}
+      {messages.length === 0 && (
+        <div className="px-4 pb-4">
+          <MotleySuggestions
+            suggestions={suggestions}
+            onSelect={handleSubmit}
+            disabled={isProcessing}
+          />
+        </div>
+      )}
+
+      {/* Messages */}
+      {messages.length > 0 && (
+        <MotleyMessages
+          messages={messages}
+          thinkingSteps={thinkingSteps}
+          isProcessing={isProcessing}
+        />
+      )}
+    </div>
+  );
+}
+
+function getToolDisplayName(toolName: string): string {
+  const displayNames: Record<string, string> = {
+    queryData: "Fetching data",
+    queryAdSpend: "Analyzing ad spend",
+    compareEntities: "Comparing data",
+    analyzeEfficiency: "Analyzing efficiency",
+    generateChart: "Creating visualization",
+    getAvailableData: "Checking available data",
+  };
+  return displayNames[toolName] || toolName;
+}

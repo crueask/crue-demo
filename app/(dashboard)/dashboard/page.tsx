@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { DashboardChartWrapper } from "@/components/dashboard/dashboard-chart-wrapper";
 import { ProjectGrid } from "@/components/dashboard/project-grid";
 import { distributeValues, addDays, daysBetween } from "@/lib/chart-utils";
+import { MotleyContainer } from "@/components/motley";
 
 interface ProjectWithStats {
   id: string;
@@ -505,6 +506,13 @@ export default async function DashboardPage() {
       <DashboardChartWrapper
         initialProjects={chartProjects}
         initialChartData={data?.chartData}
+      />
+
+      {/* Motley AI Chat */}
+      <MotleyContainer
+        context={{
+          type: "organization",
+        }}
       />
 
       {/* Search and Projects Grid */}

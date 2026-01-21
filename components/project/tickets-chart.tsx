@@ -338,6 +338,14 @@ export function TicketsChart({
                                   {mer.toFixed(0)}%
                                 </span>
                               </div>
+                              {grandTotal > 0 && (
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-sm text-gray-600">CPT (inkl. mva)</span>
+                                  <span className="text-sm font-semibold text-gray-600">
+                                    {formatCurrency(adSpendWithMva / grandTotal)}
+                                  </span>
+                                </div>
+                              )}
                             </>
                           )}
                         </>

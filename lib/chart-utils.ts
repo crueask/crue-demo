@@ -28,6 +28,25 @@ export interface ChartPreferences {
 }
 
 const CHART_PREFS_KEY = 'crue_chart_preferences';
+const CHART_DATA_CACHE_KEY = 'crue_chart_data_cache';
+const CACHE_VERSION = 1;
+
+// Cache TTL: historical data can be cached for 24 hours
+const HISTORICAL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+export interface ChartDataCache {
+  version: number;
+  // Key format: `${dateRange}_${metric}_${distributionWeight}_${projectIds.sort().join(',')}`
+  entries: Record<string, ChartDataCacheEntry>;
+}
+
+export interface ChartDataCacheEntry {
+  data: ChartDataPoint[];
+  // The date up to which data is cached (exclusive of "yesterday" which needs fresh fetch)
+  cachedUpToDate: string;
+  timestamp: number;
+  projectIds: string[];
+}
 
 export const defaultChartPreferences: ChartPreferences = {
   dateRange: '14d',
@@ -63,6 +82,192 @@ export function loadChartPreferences(): ChartPreferences {
     }
   }
   return defaultChartPreferences;
+}
+
+/**
+ * Generate a cache key for chart data based on preferences and project IDs
+ */
+export function getChartCacheKey(
+  prefs: ChartPreferences,
+  projectIds: string[]
+): string {
+  const sortedProjectIds = [...projectIds].sort().join(',');
+  return `${prefs.dateRange}_${prefs.metric}_${prefs.distributionWeight}_${sortedProjectIds}`;
+}
+
+/**
+ * Load chart data cache from localStorage
+ */
+function loadChartDataCache(): ChartDataCache {
+  if (typeof window === 'undefined') {
+    return { version: CACHE_VERSION, entries: {} };
+  }
+  const saved = localStorage.getItem(CHART_DATA_CACHE_KEY);
+  if (saved) {
+    try {
+      const cache = JSON.parse(saved) as ChartDataCache;
+      // Invalidate cache if version mismatch
+      if (cache.version !== CACHE_VERSION) {
+        return { version: CACHE_VERSION, entries: {} };
+      }
+      return cache;
+    } catch {
+      return { version: CACHE_VERSION, entries: {} };
+    }
+  }
+  return { version: CACHE_VERSION, entries: {} };
+}
+
+/**
+ * Save chart data cache to localStorage
+ */
+function saveChartDataCache(cache: ChartDataCache): void {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(CHART_DATA_CACHE_KEY, JSON.stringify(cache));
+    } catch {
+      // localStorage might be full, clear old entries
+      clearOldCacheEntries();
+    }
+  }
+}
+
+/**
+ * Clear old cache entries to free up localStorage space
+ */
+function clearOldCacheEntries(): void {
+  const cache = loadChartDataCache();
+  const now = Date.now();
+  const newEntries: Record<string, ChartDataCacheEntry> = {};
+
+  for (const [key, entry] of Object.entries(cache.entries)) {
+    // Keep entries less than 24 hours old
+    if (now - entry.timestamp < HISTORICAL_CACHE_TTL_MS) {
+      newEntries[key] = entry;
+    }
+  }
+
+  cache.entries = newEntries;
+  try {
+    localStorage.setItem(CHART_DATA_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // If still failing, clear everything
+    localStorage.removeItem(CHART_DATA_CACHE_KEY);
+  }
+}
+
+/**
+ * Get cached historical chart data (excluding yesterday which needs fresh fetch)
+ * Returns null if no valid cache exists
+ */
+export function getCachedChartData(
+  prefs: ChartPreferences,
+  projectIds: string[]
+): { data: ChartDataPoint[]; cachedUpToDate: string } | null {
+  if (typeof window === 'undefined') return null;
+
+  const cache = loadChartDataCache();
+  const cacheKey = getChartCacheKey(prefs, projectIds);
+  const entry = cache.entries[cacheKey];
+
+  if (!entry) return null;
+
+  // Check if cache is still valid (not expired)
+  const now = Date.now();
+  if (now - entry.timestamp > HISTORICAL_CACHE_TTL_MS) {
+    return null;
+  }
+
+  // Verify project IDs match
+  const sortedProjectIds = [...projectIds].sort().join(',');
+  const cachedProjectIds = [...entry.projectIds].sort().join(',');
+  if (sortedProjectIds !== cachedProjectIds) {
+    return null;
+  }
+
+  return {
+    data: entry.data,
+    cachedUpToDate: entry.cachedUpToDate,
+  };
+}
+
+/**
+ * Save chart data to cache
+ * Only caches data up to (but not including) yesterday, since yesterday's data may still change
+ */
+export function saveChartDataToCache(
+  prefs: ChartPreferences,
+  projectIds: string[],
+  data: ChartDataPoint[]
+): void {
+  if (typeof window === 'undefined') return;
+
+  const yesterday = getYesterday();
+
+  // Filter out yesterday's data - we only cache historical data
+  const historicalData = data.filter(point => point.date < yesterday);
+
+  if (historicalData.length === 0) return;
+
+  const cache = loadChartDataCache();
+  const cacheKey = getChartCacheKey(prefs, projectIds);
+
+  // Find the last date we're caching (day before yesterday)
+  const cachedUpToDate = historicalData[historicalData.length - 1].date;
+
+  cache.entries[cacheKey] = {
+    data: historicalData,
+    cachedUpToDate,
+    timestamp: Date.now(),
+    projectIds: [...projectIds],
+  };
+
+  saveChartDataCache(cache);
+}
+
+/**
+ * Merge cached historical data with fresh recent data
+ * Fresh data takes precedence for any overlapping dates
+ */
+export function mergeCachedAndFreshData(
+  cachedData: ChartDataPoint[],
+  freshData: ChartDataPoint[],
+  cachedUpToDate: string
+): ChartDataPoint[] {
+  // Create a map of fresh data by date
+  const freshByDate = new Map<string, ChartDataPoint>();
+  for (const point of freshData) {
+    freshByDate.set(point.date, point);
+  }
+
+  // Start with cached data that's before the fresh data range
+  const merged: ChartDataPoint[] = [];
+
+  for (const point of cachedData) {
+    // Only include cached data if there's no fresh data for that date
+    if (!freshByDate.has(point.date)) {
+      merged.push(point);
+    }
+  }
+
+  // Add all fresh data
+  for (const point of freshData) {
+    merged.push(point);
+  }
+
+  // Sort by date
+  merged.sort((a, b) => a.date.localeCompare(b.date));
+
+  return merged;
+}
+
+/**
+ * Clear all chart data cache
+ */
+export function clearChartDataCache(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(CHART_DATA_CACHE_KEY);
+  }
 }
 
 /**
