@@ -727,6 +727,15 @@ export async function POST(req: Request) {
       content: m.content,
     }));
 
+    // Validate messages - Anthropic requires at least one message and the first must be from user
+    if (anthropicMessages.length === 0) {
+      return new Response("No messages provided", { status: 400 });
+    }
+    if (anthropicMessages[0].role !== "user") {
+      return new Response("First message must be from user", { status: 400 });
+    }
+    console.log("Processing", anthropicMessages.length, "messages");
+
     // Create a streaming response
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
