@@ -12,7 +12,8 @@ interface TicketsChartProps {
   data: Array<{
     date: string;
     _missingStops?: MissingStop[];
-    [key: string]: string | number | MissingStop[] | undefined;
+    _entitiesWithReports?: string[];
+    [key: string]: string | number | MissingStop[] | string[] | undefined;
   }>;
   entities: Array<{
     id: string;
