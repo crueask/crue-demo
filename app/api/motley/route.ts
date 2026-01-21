@@ -747,9 +747,17 @@ export async function POST(req: Request) {
           while (continueLoop) {
             let response;
             try {
-              console.log("Calling Anthropic API with messages:", JSON.stringify(currentMessages, null, 2));
-              console.log("Tools:", JSON.stringify(motleyTools.map(t => t.name)));
-              response = await anthropic.messages.create({
+              console.log("Calling Anthropic API...");
+              console.log("Message count:", currentMessages.length);
+              console.log("First message role:", currentMessages[0]?.role);
+              console.log("Tool count:", motleyTools.length);
+
+              // Create a new client instance inside the stream to ensure proper initialization
+              const client = new Anthropic({
+                apiKey: process.env.ANTHROPIC_API_KEY,
+              });
+
+              response = await client.messages.create({
                 model: "claude-sonnet-4-20250514",
                 max_tokens: 4096,
                 system: fullSystemPrompt,
