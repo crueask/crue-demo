@@ -13,7 +13,8 @@ export interface MissingStop {
 export interface ChartDataPoint {
   date: string;
   _missingStops?: MissingStop[];
-  [key: string]: string | number | MissingStop[] | undefined;
+  _entitiesWithReports?: string[];
+  [key: string]: string | number | MissingStop[] | string[] | undefined;
 }
 
 export interface ChartPreferences {
