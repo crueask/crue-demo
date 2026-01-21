@@ -38,13 +38,13 @@ export function MotleyThinking({ steps, isProcessing }: MotleyThinkingProps) {
         {isProcessing ? (
           <>
             <Loader2 className="w-3 h-3 text-purple-500 animate-spin" />
-            <span className="text-gray-600">{currentStep?.title || "Thinking"}...</span>
+            <span className="text-gray-600">{currentStep?.title || "Tenker"}...</span>
           </>
         ) : (
           <>
             <Check className="w-3 h-3 text-green-500" />
             <span className="text-gray-600">
-              {completedCount} step{completedCount !== 1 ? "s" : ""} completed
+              {completedCount} steg fullført
             </span>
           </>
         )}

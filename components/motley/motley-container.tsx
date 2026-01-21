@@ -231,12 +231,12 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
 
 function getToolDisplayName(toolName: string): string {
   const displayNames: Record<string, string> = {
-    queryData: "Fetching data",
-    queryAdSpend: "Analyzing ad spend",
-    compareEntities: "Comparing data",
-    analyzeEfficiency: "Analyzing efficiency",
-    generateChart: "Creating visualization",
-    getAvailableData: "Checking available data",
+    queryData: "Henter data",
+    queryAdSpend: "Analyserer annonsekostnader",
+    compareEntities: "Sammenligner data",
+    analyzeEfficiency: "Analyserer effektivitet",
+    generateChart: "Lager visualisering",
+    getAvailableData: "Sjekker tilgjengelig data",
   };
   return displayNames[toolName] || toolName;
 }
