@@ -12,7 +12,10 @@ import {
 
 export const maxDuration = 60;
 
-const anthropic = new Anthropic();
+// Initialize Anthropic client - it reads ANTHROPIC_API_KEY from environment automatically
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 interface MotleyRequest {
   messages: Array<{
@@ -673,6 +676,13 @@ async function executeTool(
 
 export async function POST(req: Request) {
   try {
+    // Check if API key is configured
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.error("ANTHROPIC_API_KEY is not set");
+      return new Response("API key not configured", { status: 500 });
+    }
+    console.log("ANTHROPIC_API_KEY is configured, length:", process.env.ANTHROPIC_API_KEY.length);
+
     const { messages, context }: MotleyRequest = await req.json();
 
     // Verify user is authenticated
@@ -728,6 +738,8 @@ export async function POST(req: Request) {
           while (continueLoop) {
             let response;
             try {
+              console.log("Calling Anthropic API with messages:", JSON.stringify(currentMessages, null, 2));
+              console.log("Tools:", JSON.stringify(motleyTools.map(t => t.name)));
               response = await anthropic.messages.create({
                 model: "claude-sonnet-4-20250514",
                 max_tokens: 4096,
@@ -735,8 +747,16 @@ export async function POST(req: Request) {
                 tools: motleyTools,
                 messages: currentMessages,
               });
-            } catch (apiError) {
+              console.log("Anthropic API response stop_reason:", response.stop_reason);
+            } catch (apiError: unknown) {
               console.error("Anthropic API error:", apiError);
+              // Log more details about the error
+              if (apiError && typeof apiError === 'object') {
+                const err = apiError as { status?: number; message?: string; error?: unknown };
+                console.error("Error status:", err.status);
+                console.error("Error message:", err.message);
+                console.error("Error details:", JSON.stringify(err.error, null, 2));
+              }
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify({ type: "error", message: String(apiError) })}\n\n`)
               );
