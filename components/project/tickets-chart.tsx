@@ -45,7 +45,7 @@ const ENTITY_COLORS = [
 const AD_SPEND_COLOR = "#9333EA"; // purple-600
 
 // Check if there's any estimated data in the dataset
-function hasEstimatedData(data: Array<{ [key: string]: string | number | MissingStop[] | undefined }>, entities: Array<{ id: string }>): boolean {
+function hasEstimatedData(data: Array<{ [key: string]: string | number | MissingStop[] | string[] | undefined }>, entities: Array<{ id: string }>): boolean {
   return data.some(day =>
     entities.some(entity => {
       const estimated = day[`${entity.id}_estimated`];
