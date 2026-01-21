@@ -13,6 +13,70 @@ import {
 
 export const maxDuration = 60;
 
+// Norwegian holidays helper
+function getNorwegianHolidays(year: number): Array<{ date: string; name: string; nameEn: string }> {
+  // Calculate Easter Sunday using the Anonymous Gregorian algorithm
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+
+  const easterSunday = new Date(year, month - 1, day);
+
+  const addDays = (date: Date, days: number): string => {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result.toISOString().split("T")[0];
+  };
+
+  const formatDate = (month: number, day: number): string => {
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  };
+
+  return [
+    { date: formatDate(1, 1), name: "Nyttårsdag", nameEn: "New Year's Day" },
+    { date: addDays(easterSunday, -7), name: "Palmesøndag", nameEn: "Palm Sunday" },
+    { date: addDays(easterSunday, -3), name: "Skjærtorsdag", nameEn: "Maundy Thursday" },
+    { date: addDays(easterSunday, -2), name: "Langfredag", nameEn: "Good Friday" },
+    { date: addDays(easterSunday, 0), name: "Første påskedag", nameEn: "Easter Sunday" },
+    { date: addDays(easterSunday, 1), name: "Andre påskedag", nameEn: "Easter Monday" },
+    { date: formatDate(5, 1), name: "Arbeidernes dag", nameEn: "Labour Day" },
+    { date: formatDate(5, 17), name: "Grunnlovsdag", nameEn: "Constitution Day" },
+    { date: addDays(easterSunday, 39), name: "Kristi himmelfartsdag", nameEn: "Ascension Day" },
+    { date: addDays(easterSunday, 49), name: "Første pinsedag", nameEn: "Whit Sunday" },
+    { date: addDays(easterSunday, 50), name: "Andre pinsedag", nameEn: "Whit Monday" },
+    { date: formatDate(12, 25), name: "Første juledag", nameEn: "Christmas Day" },
+    { date: formatDate(12, 26), name: "Andre juledag", nameEn: "Boxing Day" },
+  ];
+}
+
+// Get day of week name
+function getDayOfWeek(dateStr: string): { dayNum: number; dayName: string; dayNameNo: string } {
+  const date = new Date(dateStr);
+  const dayNum = date.getDay();
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const dayNamesNo = ["Søndag", "Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag"];
+  return { dayNum, dayName: dayNames[dayNum], dayNameNo: dayNamesNo[dayNum] };
+}
+
+// Check if a date is a Norwegian holiday
+function isNorwegianHoliday(dateStr: string): { isHoliday: boolean; holiday?: { name: string; nameEn: string } } {
+  const year = parseInt(dateStr.split("-")[0]);
+  const holidays = getNorwegianHolidays(year);
+  const holiday = holidays.find(h => h.date === dateStr);
+  return holiday ? { isHoliday: true, holiday: { name: holiday.name, nameEn: holiday.nameEn } } : { isHoliday: false };
+}
+
 // Initialize Anthropic client - it reads ANTHROPIC_API_KEY from environment automatically
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -28,6 +92,45 @@ interface MotleyRequest {
     projectId?: string;
     projectName?: string;
   };
+}
+
+// Helper: Get current ticket totals for shows (using latest report per show, not sum)
+async function getCurrentTicketTotals(
+  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
+  showIds: string[]
+): Promise<{ totalTickets: number; totalRevenue: number; byShow: Record<string, { tickets: number; revenue: number }> }> {
+  if (!showIds.length) {
+    return { totalTickets: 0, totalRevenue: 0, byShow: {} };
+  }
+
+  // Get all tickets ordered by reported_at descending
+  const { data: tickets } = await supabase
+    .from("tickets")
+    .select("show_id, quantity_sold, revenue, reported_at")
+    .in("show_id", showIds)
+    .order("reported_at", { ascending: false });
+
+  // Get the LATEST report per show (first due to descending order)
+  const latestByShow: Record<string, { tickets: number; revenue: number }> = {};
+
+  for (const ticket of tickets || []) {
+    if (!latestByShow[ticket.show_id]) {
+      latestByShow[ticket.show_id] = {
+        tickets: ticket.quantity_sold || 0,
+        revenue: Number(ticket.revenue) || 0,
+      };
+    }
+  }
+
+  // Sum up the latest values per show
+  let totalTickets = 0;
+  let totalRevenue = 0;
+  for (const data of Object.values(latestByShow)) {
+    totalTickets += data.tickets;
+    totalRevenue += data.revenue;
+  }
+
+  return { totalTickets, totalRevenue, byShow: latestByShow };
 }
 
 // Tool execution functions
@@ -121,45 +224,77 @@ async function executeQueryData(
         .select("id")
         .eq("organization_id", organizationId);
 
-      if (!projects?.length) return { tickets: [], count: 0, summary: {} };
+      if (!projects?.length) return { tickets: [], count: 0, summary: {}, currentSales: {} };
 
       const { data: stops } = await supabase
         .from("stops")
         .select("id")
         .in("project_id", projectId ? [projectId] : projects.map((p) => p.id));
 
-      if (!stops?.length) return { tickets: [], count: 0, summary: {} };
+      if (!stops?.length) return { tickets: [], count: 0, summary: {}, currentSales: {} };
 
       const { data: shows } = await supabase
         .from("shows")
-        .select("id")
+        .select("id, date, capacity, stops(name, city)")
         .in("stop_id", stopId ? [stopId] : stops.map((s) => s.id));
 
-      if (!shows?.length) return { tickets: [], count: 0, summary: {} };
+      if (!shows?.length) return { tickets: [], count: 0, summary: {}, currentSales: {} };
 
+      // Get all tickets ordered by reported_at descending to find the latest for each show
       let query = supabase
         .from("tickets")
         .select("*, shows(date, name, stops(name, city))")
-        .in("show_id", shows.map((s) => s.id));
+        .in("show_id", shows.map((s) => s.id))
+        .order("reported_at", { ascending: false });
 
-      if (dateRange) {
-        query = query.gte("sale_date", dateRange.start).lte("sale_date", dateRange.end);
-      }
-
-      const { data, error } = await query.order("sale_date", { ascending: true });
+      const { data, error } = await query;
       if (error) throw error;
 
-      // Calculate summary
-      const totalTickets = data?.reduce((sum, t) => sum + (t.quantity_sold || 0), 0) || 0;
-      const totalRevenue = data?.reduce((sum, t) => sum + Number(t.revenue || 0), 0) || 0;
+      // IMPORTANT: Each ticket record represents CUMULATIVE sales at that point in time
+      // The latest ticket record for each show contains the CURRENT total, not an increment
+      // Group by show_id and get the latest (first due to descending order) for each
+      const latestByShow: Record<string, { quantity_sold: number; revenue: number; reported_at: string; show: unknown }> = {};
+      const allTicketReports = data || [];
+
+      for (const ticket of allTicketReports) {
+        if (!latestByShow[ticket.show_id]) {
+          latestByShow[ticket.show_id] = {
+            quantity_sold: ticket.quantity_sold || 0,
+            revenue: Number(ticket.revenue) || 0,
+            reported_at: ticket.reported_at,
+            show: ticket.shows,
+          };
+        }
+      }
+
+      // Calculate current totals from the LATEST report per show (not sum of all reports)
+      const currentSalesPerShow = Object.entries(latestByShow).map(([showId, data]) => ({
+        showId,
+        ...data,
+      }));
+
+      const totalTickets = currentSalesPerShow.reduce((sum, s) => sum + s.quantity_sold, 0);
+      const totalRevenue = currentSalesPerShow.reduce((sum, s) => sum + s.revenue, 0);
+      const totalCapacity = shows.reduce((sum, s) => sum + (s.capacity || 0), 0);
 
       return {
-        tickets: data,
-        count: data?.length || 0,
+        tickets: allTicketReports, // All reports for historical analysis
+        count: allTicketReports.length,
         summary: {
+          // Current totals based on latest report per show
           totalTickets,
           totalRevenue,
           avgTicketPrice: totalTickets > 0 ? totalRevenue / totalTickets : 0,
+          totalCapacity,
+          fillRate: totalCapacity > 0 ? (totalTickets / totalCapacity) * 100 : null,
+          showCount: shows.length,
+          note: "Totals are from the LATEST ticket report per show (cumulative sales), not sum of all reports",
+        },
+        currentSales: {
+          // Breakdown by show
+          byShow: currentSalesPerShow,
+          totalTickets,
+          totalRevenue,
         },
       };
     }
@@ -184,6 +319,32 @@ async function executeQueryAdSpend(
   const { scope, projectId, stopId, dateRange, includeMva = true, calculateMetrics = true } = params;
 
   let adSpendByDate: Record<string, number> = {};
+  let dataSource = "none";
+
+  // Helper to get marketing_spend data directly (fallback when facebook_ads connections don't exist)
+  async function getMarketingSpend(projectIds: string[], stopIds?: string[]): Promise<Record<string, number>> {
+    let query = supabase
+      .from("marketing_spend")
+      .select("date, spend")
+      .in("project_id", projectIds)
+      .gte("date", dateRange.start)
+      .lte("date", dateRange.end);
+
+    if (stopIds?.length) {
+      query = query.in("stop_id", stopIds);
+    }
+
+    const { data } = await query;
+    const result: Record<string, number> = {};
+
+    if (data) {
+      for (const row of data) {
+        result[row.date] = (result[row.date] || 0) + Number(row.spend);
+      }
+    }
+
+    return result;
+  }
 
   switch (scope) {
     case "organization": {
@@ -193,25 +354,69 @@ async function executeQueryAdSpend(
         .eq("organization_id", organizationId);
 
       if (projects?.length) {
+        // Try facebook_ads via stop_ad_connections first
         adSpendByDate = await getTotalAdSpend(
           supabase,
           projects.map((p) => p.id),
           dateRange.start,
           dateRange.end
         );
+
+        // If no data from facebook_ads, try marketing_spend table
+        if (Object.keys(adSpendByDate).length === 0) {
+          adSpendByDate = await getMarketingSpend(projects.map((p) => p.id));
+          if (Object.keys(adSpendByDate).length > 0) {
+            dataSource = "marketing_spend";
+          }
+        } else {
+          dataSource = "facebook_ads";
+        }
       }
       break;
     }
 
     case "project": {
       if (!projectId) throw new Error("projectId required for project scope");
+
+      // Try facebook_ads via stop_ad_connections first
       adSpendByDate = await getProjectAdSpend(supabase, projectId, dateRange.start, dateRange.end);
+
+      // If no data from facebook_ads, try marketing_spend table
+      if (Object.keys(adSpendByDate).length === 0) {
+        adSpendByDate = await getMarketingSpend([projectId]);
+        if (Object.keys(adSpendByDate).length > 0) {
+          dataSource = "marketing_spend";
+        }
+      } else {
+        dataSource = "facebook_ads";
+      }
       break;
     }
 
     case "stop": {
       if (!stopId) throw new Error("stopId required for stop scope");
+
+      // Try facebook_ads via stop_ad_connections first
       adSpendByDate = await getStopAdSpend(supabase, stopId, dateRange.start, dateRange.end);
+
+      // If no data from facebook_ads, try marketing_spend table
+      if (Object.keys(adSpendByDate).length === 0) {
+        // Get project_id for this stop
+        const { data: stopData } = await supabase
+          .from("stops")
+          .select("project_id")
+          .eq("id", stopId)
+          .single();
+
+        if (stopData?.project_id) {
+          adSpendByDate = await getMarketingSpend([stopData.project_id], [stopId]);
+          if (Object.keys(adSpendByDate).length > 0) {
+            dataSource = "marketing_spend";
+          }
+        }
+      } else {
+        dataSource = "facebook_ads";
+      }
       break;
     }
   }
@@ -252,6 +457,8 @@ async function executeQueryAdSpend(
     totalSpend,
     dateRange,
     includeMva,
+    dataSource,
+    note: dataSource === "none" ? "Ingen annonsekostnader funnet. Koble til annonsekampanjer i stoppestedsinnstillingene eller legg til data i marketing_spend." : undefined,
     ...metrics,
   };
 }
@@ -297,16 +504,11 @@ async function executeCompareEntities(
         const showIds = shows?.map((s) => s.id) || [];
 
         if (metrics.includes("tickets") || metrics.includes("revenue") || metrics.includes("fill_rate")) {
-          let ticketQuery = supabase.from("tickets").select("quantity_sold, revenue").in("show_id", showIds);
+          // Use latest ticket report per show, not sum of all reports
+          const ticketTotals = await getCurrentTicketTotals(supabase, showIds);
 
-          if (dateRange) {
-            ticketQuery = ticketQuery.gte("sale_date", dateRange.start).lte("sale_date", dateRange.end);
-          }
-
-          const { data: tickets } = await ticketQuery;
-
-          stopData.tickets = tickets?.reduce((sum, t) => sum + (t.quantity_sold || 0), 0) || 0;
-          stopData.revenue = tickets?.reduce((sum, t) => sum + Number(t.revenue || 0), 0) || 0;
+          stopData.tickets = ticketTotals.totalTickets;
+          stopData.revenue = ticketTotals.totalRevenue;
 
           const totalCapacity = shows?.reduce((sum, s) => sum + (s.capacity || 0), 0) || 0;
           stopData.fill_rate =
@@ -371,16 +573,11 @@ async function executeCompareEntities(
         const showIds = shows?.map((s) => s.id) || [];
 
         if (metrics.includes("tickets") || metrics.includes("revenue") || metrics.includes("fill_rate")) {
-          let ticketQuery = supabase.from("tickets").select("quantity_sold, revenue").in("show_id", showIds);
+          // Use latest ticket report per show, not sum of all reports
+          const ticketTotals = await getCurrentTicketTotals(supabase, showIds);
 
-          if (dateRange) {
-            ticketQuery = ticketQuery.gte("sale_date", dateRange.start).lte("sale_date", dateRange.end);
-          }
-
-          const { data: tickets } = await ticketQuery;
-
-          projectData.tickets = tickets?.reduce((sum, t) => sum + (t.quantity_sold || 0), 0) || 0;
-          projectData.revenue = tickets?.reduce((sum, t) => sum + Number(t.revenue || 0), 0) || 0;
+          projectData.tickets = ticketTotals.totalTickets;
+          projectData.revenue = ticketTotals.totalRevenue;
 
           const totalCapacity = shows?.reduce((sum, s) => sum + (s.capacity || 0), 0) || 0;
           projectData.fill_rate =
@@ -627,6 +824,353 @@ async function executeGetAvailableData(
   return result;
 }
 
+async function executeAnalyzeSalesTiming(
+  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
+  organizationId: string,
+  params: {
+    scope: string;
+    projectId?: string;
+    stopId?: string;
+    showId?: string;
+    analysisType: string;
+    daysOutBuckets?: number[];
+    compareShows?: boolean;
+  }
+) {
+  const { scope, projectId, stopId, showId, analysisType, daysOutBuckets = [0, 7, 14, 30, 60, 90], compareShows } = params;
+
+  // Get shows based on scope
+  let showsQuery;
+  if (scope === "show" && showId) {
+    showsQuery = supabase
+      .from("shows")
+      .select("id, date, sales_start_date, capacity, stops(name, city, project_id)")
+      .eq("id", showId);
+  } else if (scope === "stop" && stopId) {
+    showsQuery = supabase
+      .from("shows")
+      .select("id, date, sales_start_date, capacity, stops(name, city, project_id)")
+      .eq("stop_id", stopId);
+  } else if (projectId) {
+    // Get stops for project first
+    const { data: stops } = await supabase
+      .from("stops")
+      .select("id")
+      .eq("project_id", projectId);
+
+    if (!stops?.length) {
+      return { error: "No stops found for this project" };
+    }
+
+    showsQuery = supabase
+      .from("shows")
+      .select("id, date, sales_start_date, capacity, stops(name, city, project_id)")
+      .in("stop_id", stops.map(s => s.id));
+  } else {
+    // Get all shows for organization
+    const { data: projects } = await supabase
+      .from("projects")
+      .select("id")
+      .eq("organization_id", organizationId);
+
+    if (!projects?.length) {
+      return { error: "No projects found" };
+    }
+
+    const { data: stops } = await supabase
+      .from("stops")
+      .select("id")
+      .in("project_id", projects.map(p => p.id));
+
+    if (!stops?.length) {
+      return { error: "No stops found" };
+    }
+
+    showsQuery = supabase
+      .from("shows")
+      .select("id, date, sales_start_date, capacity, stops(name, city, project_id)")
+      .in("stop_id", stops.map(s => s.id));
+  }
+
+  const { data: shows, error: showsError } = await showsQuery;
+  if (showsError || !shows?.length) {
+    return { error: showsError?.message || "No shows found" };
+  }
+
+  // Get all tickets for these shows
+  const { data: tickets, error: ticketsError } = await supabase
+    .from("tickets")
+    .select("id, show_id, quantity_sold, revenue, reported_at")
+    .in("show_id", shows.map(s => s.id));
+
+  if (ticketsError) {
+    return { error: ticketsError.message };
+  }
+
+  // Build show info map
+  const showInfoMap: Record<string, { date: string; salesStartDate: string | null; capacity: number; stopName: string }> = {};
+  for (const show of shows) {
+    const stopInfo = show.stops as unknown as { name: string; city: string } | null;
+    showInfoMap[show.id] = {
+      date: show.date,
+      salesStartDate: show.sales_start_date,
+      capacity: show.capacity || 0,
+      stopName: stopInfo?.name || "Unknown",
+    };
+  }
+
+  // Calculate days out for each ticket sale
+  interface TicketWithTiming {
+    showId: string;
+    showDate: string;
+    salesStartDate: string | null;
+    saleDate: string;
+    daysOut: number; // negative = days before show
+    daysSinceSalesStart: number | null;
+    dayOfWeek: { dayNum: number; dayName: string; dayNameNo: string };
+    isHoliday: boolean;
+    holidayName?: string;
+    quantity: number;
+    revenue: number;
+  }
+
+  const ticketsWithTiming: TicketWithTiming[] = [];
+
+  for (const ticket of tickets || []) {
+    const showInfo = showInfoMap[ticket.show_id];
+    if (!showInfo) continue;
+
+    const saleDate = ticket.reported_at?.split("T")[0];
+    if (!saleDate) continue;
+
+    const showDate = new Date(showInfo.date);
+    const saleDateObj = new Date(saleDate);
+    const daysOut = Math.round((showDate.getTime() - saleDateObj.getTime()) / (1000 * 60 * 60 * 24));
+
+    let daysSinceSalesStart: number | null = null;
+    if (showInfo.salesStartDate) {
+      const salesStartObj = new Date(showInfo.salesStartDate);
+      daysSinceSalesStart = Math.round((saleDateObj.getTime() - salesStartObj.getTime()) / (1000 * 60 * 60 * 24));
+    }
+
+    const dayOfWeek = getDayOfWeek(saleDate);
+    const holidayInfo = isNorwegianHoliday(saleDate);
+
+    ticketsWithTiming.push({
+      showId: ticket.show_id,
+      showDate: showInfo.date,
+      salesStartDate: showInfo.salesStartDate,
+      saleDate,
+      daysOut,
+      daysSinceSalesStart,
+      dayOfWeek,
+      isHoliday: holidayInfo.isHoliday,
+      holidayName: holidayInfo.holiday?.name,
+      quantity: ticket.quantity_sold || 0,
+      revenue: Number(ticket.revenue) || 0,
+    });
+  }
+
+  const result: Record<string, unknown> = {
+    showCount: shows.length,
+    ticketRecordCount: ticketsWithTiming.length,
+    totalTickets: ticketsWithTiming.reduce((sum, t) => sum + t.quantity, 0),
+    totalRevenue: ticketsWithTiming.reduce((sum, t) => sum + t.revenue, 0),
+  };
+
+  // Days Out Analysis
+  if (analysisType === "days_out" || analysisType === "full") {
+    const sortedBuckets = [...daysOutBuckets].sort((a, b) => a - b);
+    const daysOutAnalysis: Array<{
+      bucket: string;
+      minDays: number;
+      maxDays: number | null;
+      tickets: number;
+      revenue: number;
+      percentOfTotal: number;
+    }> = [];
+
+    for (let i = 0; i < sortedBuckets.length; i++) {
+      const minDays = sortedBuckets[i];
+      const maxDays = sortedBuckets[i + 1] || null;
+
+      const bucketed = ticketsWithTiming.filter(t => {
+        if (maxDays === null) return t.daysOut >= minDays;
+        return t.daysOut >= minDays && t.daysOut < maxDays;
+      });
+
+      const bucketTickets = bucketed.reduce((sum, t) => sum + t.quantity, 0);
+      const bucketRevenue = bucketed.reduce((sum, t) => sum + t.revenue, 0);
+      const totalTickets = result.totalTickets as number;
+
+      daysOutAnalysis.push({
+        bucket: maxDays === null ? `${minDays}+ days` : `${minDays}-${maxDays} days`,
+        minDays,
+        maxDays,
+        tickets: bucketTickets,
+        revenue: bucketRevenue,
+        percentOfTotal: totalTickets > 0 ? (bucketTickets / totalTickets) * 100 : 0,
+      });
+    }
+
+    result.daysOutAnalysis = daysOutAnalysis;
+    result.daysOutBuckets = sortedBuckets;
+
+    // Calculate average days out
+    const weightedDaysOut = ticketsWithTiming.reduce((sum, t) => sum + (t.daysOut * t.quantity), 0);
+    const totalQty = result.totalTickets as number;
+    result.averageDaysOut = totalQty > 0 ? weightedDaysOut / totalQty : null;
+  }
+
+  // Weekday Analysis
+  if (analysisType === "weekday" || analysisType === "full") {
+    const weekdayAnalysis: Array<{
+      dayNum: number;
+      dayName: string;
+      dayNameNo: string;
+      tickets: number;
+      revenue: number;
+      percentOfTotal: number;
+      avgTicketsPerDay: number;
+    }> = [];
+
+    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const dayNamesNo = ["Søndag", "Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag"];
+
+    for (let dayNum = 0; dayNum < 7; dayNum++) {
+      const dayTickets = ticketsWithTiming.filter(t => t.dayOfWeek.dayNum === dayNum);
+      const uniqueDays = new Set(dayTickets.map(t => t.saleDate)).size;
+      const tickets = dayTickets.reduce((sum, t) => sum + t.quantity, 0);
+      const revenue = dayTickets.reduce((sum, t) => sum + t.revenue, 0);
+      const totalTickets = result.totalTickets as number;
+
+      weekdayAnalysis.push({
+        dayNum,
+        dayName: dayNames[dayNum],
+        dayNameNo: dayNamesNo[dayNum],
+        tickets,
+        revenue,
+        percentOfTotal: totalTickets > 0 ? (tickets / totalTickets) * 100 : 0,
+        avgTicketsPerDay: uniqueDays > 0 ? tickets / uniqueDays : 0,
+      });
+    }
+
+    result.weekdayAnalysis = weekdayAnalysis;
+
+    // Find best and worst days
+    const sortedByTickets = [...weekdayAnalysis].sort((a, b) => b.avgTicketsPerDay - a.avgTicketsPerDay);
+    result.bestSalesDay = sortedByTickets[0];
+    result.worstSalesDay = sortedByTickets[sortedByTickets.length - 1];
+  }
+
+  // Velocity Curve Analysis
+  if (analysisType === "velocity_curve" || analysisType === "full") {
+    // Group by days out and calculate daily velocity
+    const velocityByDaysOut: Record<number, { tickets: number; days: Set<string> }> = {};
+
+    for (const ticket of ticketsWithTiming) {
+      if (!velocityByDaysOut[ticket.daysOut]) {
+        velocityByDaysOut[ticket.daysOut] = { tickets: 0, days: new Set() };
+      }
+      velocityByDaysOut[ticket.daysOut].tickets += ticket.quantity;
+      velocityByDaysOut[ticket.daysOut].days.add(ticket.saleDate);
+    }
+
+    const velocityCurve = Object.entries(velocityByDaysOut)
+      .map(([daysOut, data]) => ({
+        daysOut: parseInt(daysOut),
+        tickets: data.tickets,
+        uniqueDays: data.days.size,
+        avgVelocity: data.days.size > 0 ? data.tickets / data.days.size : data.tickets,
+      }))
+      .sort((a, b) => b.daysOut - a.daysOut); // Sort from most days out to least
+
+    result.velocityCurve = velocityCurve;
+
+    // Identify velocity patterns
+    const last7Days = velocityCurve.filter(v => v.daysOut >= 0 && v.daysOut <= 7);
+    const weeks2to4 = velocityCurve.filter(v => v.daysOut > 7 && v.daysOut <= 30);
+    const earlyBird = velocityCurve.filter(v => v.daysOut > 30);
+
+    result.velocityPatterns = {
+      lastWeekTickets: last7Days.reduce((sum, v) => sum + v.tickets, 0),
+      weeks2to4Tickets: weeks2to4.reduce((sum, v) => sum + v.tickets, 0),
+      earlyBirdTickets: earlyBird.reduce((sum, v) => sum + v.tickets, 0),
+    };
+  }
+
+  // Holiday Impact Analysis
+  if (analysisType === "holiday_impact" || analysisType === "full") {
+    const holidaySales = ticketsWithTiming.filter(t => t.isHoliday);
+    const nonHolidaySales = ticketsWithTiming.filter(t => !t.isHoliday);
+
+    const holidayDays = new Set(holidaySales.map(t => t.saleDate)).size;
+    const nonHolidayDays = new Set(nonHolidaySales.map(t => t.saleDate)).size;
+
+    const holidayTickets = holidaySales.reduce((sum, t) => sum + t.quantity, 0);
+    const nonHolidayTickets = nonHolidaySales.reduce((sum, t) => sum + t.quantity, 0);
+
+    result.holidayImpact = {
+      holidaySales: {
+        tickets: holidayTickets,
+        revenue: holidaySales.reduce((sum, t) => sum + t.revenue, 0),
+        days: holidayDays,
+        avgPerDay: holidayDays > 0 ? holidayTickets / holidayDays : 0,
+      },
+      nonHolidaySales: {
+        tickets: nonHolidayTickets,
+        revenue: nonHolidaySales.reduce((sum, t) => sum + t.revenue, 0),
+        days: nonHolidayDays,
+        avgPerDay: nonHolidayDays > 0 ? nonHolidayTickets / nonHolidayDays : 0,
+      },
+      holidayList: [...new Set(holidaySales.map(t => t.holidayName))].filter(Boolean),
+    };
+  }
+
+  // Compare shows if requested
+  if (compareShows && shows.length > 1) {
+    const showComparison: Array<{
+      showId: string;
+      showDate: string;
+      stopName: string;
+      salesStartDate: string | null;
+      tickets: number;
+      revenue: number;
+      avgDaysOut: number | null;
+      salesDuration: number | null;
+    }> = [];
+
+    for (const show of shows) {
+      const showTickets = ticketsWithTiming.filter(t => t.showId === show.id);
+      const totalQty = showTickets.reduce((sum, t) => sum + t.quantity, 0);
+      const weightedDaysOut = showTickets.reduce((sum, t) => sum + (t.daysOut * t.quantity), 0);
+      const info = showInfoMap[show.id];
+
+      let salesDuration: number | null = null;
+      if (info.salesStartDate) {
+        const start = new Date(info.salesStartDate);
+        const end = new Date(info.date);
+        salesDuration = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      }
+
+      showComparison.push({
+        showId: show.id,
+        showDate: info.date,
+        stopName: info.stopName,
+        salesStartDate: info.salesStartDate,
+        tickets: totalQty,
+        revenue: showTickets.reduce((sum, t) => sum + t.revenue, 0),
+        avgDaysOut: totalQty > 0 ? weightedDaysOut / totalQty : null,
+        salesDuration,
+      });
+    }
+
+    result.showComparison = showComparison.sort((a, b) => a.showDate.localeCompare(b.showDate));
+  }
+
+  return result;
+}
+
 // Execute a tool and return the result
 async function executeTool(
   supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
@@ -668,6 +1212,13 @@ async function executeTool(
         supabase,
         organizationId,
         toolInput as Parameters<typeof executeGetAvailableData>[2]
+      );
+
+    case "analyzeSalesTiming":
+      return executeAnalyzeSalesTiming(
+        supabase,
+        organizationId,
+        toolInput as Parameters<typeof executeAnalyzeSalesTiming>[2]
       );
 
     default:

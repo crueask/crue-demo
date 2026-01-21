@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Check, Database, BarChart3, TrendingUp, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Check, Database, BarChart3, TrendingUp, Search, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThinkingStep } from "./motley-messages";
 
@@ -104,6 +104,8 @@ function StepIcon({ toolName, status }: { toolName?: string; status: ThinkingSte
       return <BarChart3 className={iconClass} />;
     case "compareEntities":
       return <Search className={iconClass} />;
+    case "analyzeSalesTiming":
+      return <Calendar className={iconClass} />;
     default:
       return <div className={cn("w-4 h-4 rounded-full border-2", iconClass)} />;
   }

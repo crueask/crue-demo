@@ -193,21 +193,25 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
     };
   }, []);
 
+  const hasMessages = messages.length > 0;
+
   return (
     <div className="space-y-3">
-      {/* Search Bar */}
-      <MotleySearchBar
-        onSubmit={handleSubmit}
-        isProcessing={isProcessing}
-        placeholder={
-          context.type === "project"
-            ? `Spør Motley om ${context.projectName || "dette prosjektet"}...`
-            : "Spør Motley om dataene dine..."
-        }
-      />
+      {/* Search Bar at top when no messages */}
+      {!hasMessages && (
+        <MotleySearchBar
+          onSubmit={handleSubmit}
+          isProcessing={isProcessing}
+          placeholder={
+            context.type === "project"
+              ? `Spør Motley om ${context.projectName || "dette prosjektet"}...`
+              : "Spør Motley om dataene dine..."
+          }
+        />
+      )}
 
       {/* Suggestions (only show when no messages) */}
-      {messages.length === 0 && (
+      {!hasMessages && (
         <MotleySuggestions
           suggestions={suggestions}
           onSelect={handleSubmit}
@@ -215,14 +219,23 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
         />
       )}
 
-      {/* Messages */}
-      {messages.length > 0 && (
+      {/* Messages and input container */}
+      {hasMessages && (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <MotleyMessages
             messages={messages}
             thinkingSteps={thinkingSteps}
             isProcessing={isProcessing}
           />
+
+          {/* Search Bar at bottom when conversation is active */}
+          <div className="border-t border-gray-100 p-3">
+            <MotleySearchBar
+              onSubmit={handleSubmit}
+              isProcessing={isProcessing}
+              placeholder="Følg opp med et nytt spørsmål..."
+            />
+          </div>
         </div>
       )}
     </div>
@@ -237,6 +250,7 @@ function getToolDisplayName(toolName: string): string {
     analyzeEfficiency: "Analyserer effektivitet",
     generateChart: "Lager visualisering",
     getAvailableData: "Sjekker tilgjengelig data",
+    analyzeSalesTiming: "Analyserer salgstidspunkter",
   };
   return displayNames[toolName] || toolName;
 }

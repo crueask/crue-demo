@@ -42,10 +42,21 @@ export function MotleyMessages({ messages, thinkingSteps, isProcessing }: Motley
     }
   }, [messages, thinkingSteps]);
 
+  // Get thinking steps for a specific message
+  const getStepsForMessage = (message: Message, index: number): ThinkingStep[] => {
+    if (message.role !== "assistant") return [];
+    // For the last assistant message, use live thinking steps if available
+    if (index === messages.length - 1 && thinkingSteps.length > 0) {
+      return thinkingSteps;
+    }
+    // Otherwise use stored thinking steps
+    return message.thinkingSteps || [];
+  };
+
   return (
     <div
       ref={scrollRef}
-      className="max-h-[500px] overflow-y-auto border-t border-gray-100"
+      className="max-h-[500px] overflow-y-auto"
     >
       <div className="p-4 space-y-4">
         {messages.map((message, index) => (
@@ -64,32 +75,31 @@ export function MotleyMessages({ messages, thinkingSteps, isProcessing }: Motley
 
             <div
               className={cn(
-                "max-w-[85%] space-y-3",
+                "max-w-[85%]",
                 message.role === "user" ? "order-1" : "order-2"
               )}
             >
-              {/* Show thinking steps for the current/last assistant message */}
-              {message.role === "assistant" &&
-                index === messages.length - 1 &&
-                (thinkingSteps.length > 0 || message.thinkingSteps?.length) && (
-                  <MotleyThinking
-                    steps={thinkingSteps.length > 0 ? thinkingSteps : (message.thinkingSteps || [])}
-                    isProcessing={isProcessing && message.isStreaming}
-                  />
-                )}
+              {/* User message */}
+              {message.role === "user" && (
+                <div className="rounded-2xl px-4 py-3 bg-gray-900 text-white">
+                  <p className="text-sm">{message.content}</p>
+                </div>
+              )}
 
-              {/* Message content */}
-              {message.content && (
-                <div
-                  className={cn(
-                    "rounded-2xl px-4 py-3",
-                    message.role === "user"
-                      ? "bg-gray-900 text-white"
-                      : "bg-gray-50 text-gray-900"
-                  )}
-                >
-                  {message.role === "assistant" ? (
-                    <div className="text-sm leading-relaxed space-y-3">
+              {/* Assistant message with inline thinking */}
+              {message.role === "assistant" && (
+                <div className="rounded-2xl px-4 py-3 bg-gray-50 text-gray-900">
+                  <div className="text-sm leading-relaxed space-y-3">
+                    {/* Show thinking steps inline at the top of assistant response */}
+                    {getStepsForMessage(message, index).length > 0 && (
+                      <MotleyThinking
+                        steps={getStepsForMessage(message, index)}
+                        isProcessing={isProcessing && message.isStreaming && index === messages.length - 1}
+                      />
+                    )}
+
+                    {/* Message content */}
+                    {message.content && (
                       <ReactMarkdown
                         components={{
                           h2: ({ children }) => <h2 className="text-base font-semibold text-gray-900 mt-4 mb-2 first:mt-0">{children}</h2>,
@@ -105,26 +115,24 @@ export function MotleyMessages({ messages, thinkingSteps, isProcessing }: Motley
                       >
                         {message.content}
                       </ReactMarkdown>
-                    </div>
-                  ) : (
-                    <p className="text-sm">{message.content}</p>
-                  )}
+                    )}
 
-                  {/* Streaming indicator */}
-                  {message.isStreaming && !message.content && (
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                    </div>
-                  )}
+                    {/* Streaming indicator when no content yet */}
+                    {message.isStreaming && !message.content && getStepsForMessage(message, index).length === 0 && (
+                      <div className="flex items-center gap-1">
+                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </div>
+                    )}
+
+                    {/* Charts inline in the response */}
+                    {message.charts?.map((chart, chartIndex) => (
+                      <MotleyChartRenderer key={chartIndex} config={chart} />
+                    ))}
+                  </div>
                 </div>
               )}
-
-              {/* Charts */}
-              {message.charts?.map((chart, chartIndex) => (
-                <MotleyChartRenderer key={chartIndex} config={chart} />
-              ))}
             </div>
 
             {message.role === "user" && (

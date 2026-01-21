@@ -255,6 +255,49 @@ Use this to understand what projects, stops, shows, and campaigns exist before q
       required: [] as string[],
     },
   },
+  {
+    name: "analyzeSalesTiming",
+    description: `Analyze sales timing patterns including days-until-show, weekday patterns, and holiday effects.
+Returns temporal analysis of ticket sales showing when sales occurred relative to show dates.
+Use this to understand sales velocity at different time points and identify patterns.`,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        scope: {
+          type: "string",
+          enum: ["project", "stop", "show"],
+          description: "Scope of timing analysis",
+        },
+        projectId: {
+          type: "string",
+          description: "Project ID to analyze",
+        },
+        stopId: {
+          type: "string",
+          description: "Stop ID for stop-level analysis (optional)",
+        },
+        showId: {
+          type: "string",
+          description: "Show ID for show-level analysis (optional)",
+        },
+        analysisType: {
+          type: "string",
+          enum: ["days_out", "weekday", "velocity_curve", "holiday_impact", "full"],
+          description: "Type of timing analysis: days_out (sales by days until show), weekday (day of week patterns), velocity_curve (sales velocity over time), holiday_impact (effect of holidays), full (all analyses)",
+        },
+        daysOutBuckets: {
+          type: "array",
+          items: { type: "number" },
+          description: "Custom days-out bucket boundaries (default: [0, 7, 14, 30, 60, 90])",
+        },
+        compareShows: {
+          type: "boolean",
+          description: "Compare timing patterns across shows (for project/stop scope)",
+        },
+      },
+      required: ["scope", "analysisType"],
+    },
+  },
 ];
 
 // Chart configuration type for frontend rendering
