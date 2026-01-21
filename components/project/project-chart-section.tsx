@@ -338,9 +338,17 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, entityData]) => {
         const dataPoint: ChartDataPoint = { date };
+        // Track which entities have reports for this date (to show 0-value reports in tooltip)
+        const entitiesWithReports: string[] = [];
         for (const [entityId, values] of Object.entries(entityData)) {
           dataPoint[entityId] = values.actual;
           dataPoint[`${entityId}_estimated`] = values.estimated;
+          if (reportDatesByEntity[entityId]?.has(date)) {
+            entitiesWithReports.push(entityId);
+          }
+        }
+        if (entitiesWithReports.length > 0) {
+          dataPoint._entitiesWithReports = entitiesWithReports;
         }
 
         // Calculate missing stops for this date

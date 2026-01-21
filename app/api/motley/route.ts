@@ -726,13 +726,23 @@ export async function POST(req: Request) {
           let currentMessages = [...anthropicMessages];
 
           while (continueLoop) {
-            const response = await anthropic.messages.create({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 4096,
-              system: fullSystemPrompt,
-              tools: motleyTools,
-              messages: currentMessages,
-            });
+            let response;
+            try {
+              response = await anthropic.messages.create({
+                model: "claude-sonnet-4-20250514",
+                max_tokens: 4096,
+                system: fullSystemPrompt,
+                tools: motleyTools,
+                messages: currentMessages,
+              });
+            } catch (apiError) {
+              console.error("Anthropic API error:", apiError);
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ type: "error", message: String(apiError) })}\n\n`)
+              );
+              controller.close();
+              return;
+            }
 
             // Process the response
             for (const block of response.content) {

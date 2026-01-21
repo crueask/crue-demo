@@ -205,9 +205,10 @@ export function TicketsChart({
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
 
-              // Get missing stops from the data point
-              const dataPoint = payload[0]?.payload as { _missingStops?: MissingStop[] } | undefined;
+              // Get missing stops and entities with reports from the data point
+              const dataPoint = payload[0]?.payload as { _missingStops?: MissingStop[]; _entitiesWithReports?: string[] } | undefined;
               const missingStops = dataPoint?._missingStops || [];
+              const entitiesWithReports = new Set(dataPoint?._entitiesWithReports || []);
 
               // Group data by entity (combining actual + estimated)
               const entityData: Record<string, { actual: number; estimated: number; color: string; name: string }> = {};
@@ -266,7 +267,8 @@ export function TicketsChart({
                   </div>
                   <div className="space-y-1.5">
                     {sortedEntityData.map((data) => {
-                      if (data.total === 0) return null;
+                      // Show entity if it has tickets OR if it has a report (even with 0 new tickets)
+                      if (data.total === 0 && !entitiesWithReports.has(data.id)) return null;
 
                       return (
                         <div key={data.id} className="space-y-0.5">
