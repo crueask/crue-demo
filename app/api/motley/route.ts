@@ -758,16 +758,24 @@ export async function POST(req: Request) {
               });
               console.log("Anthropic API response stop_reason:", response.stop_reason);
             } catch (apiError: unknown) {
-              console.error("Anthropic API error:", apiError);
-              // Log more details about the error
+              console.error("Anthropic API error (full):", JSON.stringify(apiError, Object.getOwnPropertyNames(apiError as object), 2));
+              // Log more details about the error - Anthropic SDK uses APIError class
               if (apiError && typeof apiError === 'object') {
-                const err = apiError as { status?: number; message?: string; error?: unknown };
+                const err = apiError as {
+                  status?: number;
+                  message?: string;
+                  error?: { type?: string; message?: string };
+                  type?: string;
+                  headers?: Record<string, string>;
+                };
                 console.error("Error status:", err.status);
                 console.error("Error message:", err.message);
-                console.error("Error details:", JSON.stringify(err.error, null, 2));
+                console.error("Error type:", err.type);
+                console.error("Error.error:", JSON.stringify(err.error));
               }
+              const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
               controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: "error", message: String(apiError) })}\n\n`)
+                encoder.encode(`data: ${JSON.stringify({ type: "error", message: errorMessage })}\n\n`)
               );
               controller.close();
               return;
