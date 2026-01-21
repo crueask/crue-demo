@@ -105,12 +105,6 @@ export function MotleySearchBar({
         </div>
       </div>
 
-      {/* Helper text */}
-      <p className="text-xs text-gray-400 mt-2 px-1">
-        {isProcessing
-          ? "Motley is thinking..."
-          : "Press Enter to send, Shift+Enter for new line"}
-      </p>
     </form>
   );
 }

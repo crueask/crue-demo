@@ -194,49 +194,36 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
   }, []);
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-400 via-pink-400 to-blue-400 flex items-center justify-center">
-            <span className="text-white text-xs font-bold">M</span>
-          </div>
-          <h3 className="font-semibold text-gray-900">Motley</h3>
-          <span className="text-xs text-gray-500">AI Business Intelligence</span>
-        </div>
-      </div>
-
+    <div className="space-y-3">
       {/* Search Bar */}
-      <div className="p-4">
-        <MotleySearchBar
-          onSubmit={handleSubmit}
-          isProcessing={isProcessing}
-          placeholder={
-            context.type === "project"
-              ? `Ask Motley about ${context.projectName || "this project"}...`
-              : "Ask Motley about your data..."
-          }
-        />
-      </div>
+      <MotleySearchBar
+        onSubmit={handleSubmit}
+        isProcessing={isProcessing}
+        placeholder={
+          context.type === "project"
+            ? `Ask Motley about ${context.projectName || "this project"}...`
+            : "Ask Motley about your data..."
+        }
+      />
 
       {/* Suggestions (only show when no messages) */}
       {messages.length === 0 && (
-        <div className="px-4 pb-4">
-          <MotleySuggestions
-            suggestions={suggestions}
-            onSelect={handleSubmit}
-            disabled={isProcessing}
-          />
-        </div>
+        <MotleySuggestions
+          suggestions={suggestions}
+          onSelect={handleSubmit}
+          disabled={isProcessing}
+        />
       )}
 
       {/* Messages */}
       {messages.length > 0 && (
-        <MotleyMessages
-          messages={messages}
-          thinkingSteps={thinkingSteps}
-          isProcessing={isProcessing}
-        />
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <MotleyMessages
+            messages={messages}
+            thinkingSteps={thinkingSteps}
+            isProcessing={isProcessing}
+          />
+        </div>
       )}
     </div>
   );
