@@ -675,34 +675,42 @@ async function executeTool(
 }
 
 export async function POST(req: Request) {
+  console.log("=== Motley API POST start ===");
   try {
     // Check if API key is configured
     if (!process.env.ANTHROPIC_API_KEY) {
       console.error("ANTHROPIC_API_KEY is not set");
       return new Response("API key not configured", { status: 500 });
     }
-    console.log("ANTHROPIC_API_KEY is configured, length:", process.env.ANTHROPIC_API_KEY.length);
+    console.log("1. ANTHROPIC_API_KEY is configured, length:", process.env.ANTHROPIC_API_KEY.length);
 
     const { messages, context }: MotleyRequest = await req.json();
+    console.log("2. Parsed request body - messages:", messages?.length, "context:", context?.type);
 
     // Verify user is authenticated
     const supabase = await createClient();
+    console.log("3. Supabase client created");
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    console.log("4. Auth check - user:", user?.id ? "found" : "not found");
 
     if (!user) {
+      console.log("FAIL: No user - returning 401");
       return new Response("Unauthorized", { status: 401 });
     }
 
     // Get user's organization
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await supabase
       .from("organization_members")
       .select("organization_id, organizations(name)")
       .eq("user_id", user.id)
       .single();
+    console.log("5. Organization lookup - found:", !!membership, "error:", membershipError?.message);
 
     if (!membership) {
+      console.log("FAIL: No membership - returning 400");
       return new Response("No organization found", { status: 400 });
     }
 
