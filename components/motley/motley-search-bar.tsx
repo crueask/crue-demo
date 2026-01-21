@@ -13,7 +13,7 @@ interface MotleySearchBarProps {
 export function MotleySearchBar({
   onSubmit,
   isProcessing,
-  placeholder = "Ask Motley about your data...",
+  placeholder = "Spør Motley om dataene dine...",
 }: MotleySearchBarProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);

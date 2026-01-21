@@ -25,19 +25,19 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Generate context-aware suggestions
+  // Generate context-aware suggestions (Norwegian)
   const suggestions = context.type === "project"
     ? [
-        "How are ticket sales trending?",
-        "What's my ROAS for this project?",
-        stops?.length ? `Compare ${stops.slice(0, 2).map(s => s.name).join(" and ")}` : "Compare stops",
-        "When should I reduce ad spend?",
+        "Hvordan går billettsalget?",
+        "Hva er ROAS for dette prosjektet?",
+        stops?.length ? `Sammenlign ${stops.slice(0, 2).map(s => s.name).join(" og ")}` : "Sammenlign stoppesteder",
+        "Når bør jeg redusere annonsekostnader?",
       ]
     : [
-        "Compare all my projects",
-        "What's my overall ROAS?",
-        "Which project needs attention?",
-        "Show me revenue trends",
+        "Sammenlign alle prosjektene mine",
+        "Hva er total ROAS?",
+        "Hvilket prosjekt trenger oppmerksomhet?",
+        "Vis meg inntektstrender",
       ];
 
   const handleSubmit = useCallback(async (input: string) => {
@@ -201,8 +201,8 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
         isProcessing={isProcessing}
         placeholder={
           context.type === "project"
-            ? `Ask Motley about ${context.projectName || "this project"}...`
-            : "Ask Motley about your data..."
+            ? `Spør Motley om ${context.projectName || "dette prosjektet"}...`
+            : "Spør Motley om dataene dine..."
         }
       />
 
