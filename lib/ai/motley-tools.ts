@@ -252,6 +252,7 @@ Use this to understand what projects, stops, shows, and campaigns exist before q
           description: "Filter to specific project",
         },
       },
+      required: [] as string[],
     },
   },
 ];
