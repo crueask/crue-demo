@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { motleySystemPrompt, getContextPrompt, MotleyContext } from "@/lib/ai/motley-prompt";
 import { motleyTools, ChartConfig } from "@/lib/ai/motley-tools";
 import {
@@ -701,8 +702,9 @@ export async function POST(req: Request) {
       return new Response("Unauthorized", { status: 401 });
     }
 
-    // Get user's organization
-    const { data: membership, error: membershipError } = await supabase
+    // Get user's organization - use admin client to bypass RLS infinite recursion issue
+    const adminClient = createAdminClient();
+    const { data: membership, error: membershipError } = await adminClient
       .from("organization_members")
       .select("organization_id, organizations(name)")
       .eq("user_id", user.id)
