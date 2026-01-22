@@ -10,6 +10,11 @@ import {
   getAllCampaignsWithAdsets,
   applyMva,
 } from "@/lib/ad-spend";
+import {
+  getDailySalesForScope,
+  getPeriodMetrics,
+  DistributionWeight,
+} from "@/lib/motley/daily-sales";
 
 export const maxDuration = 60;
 
@@ -1261,6 +1266,96 @@ async function executeAnalyzeSalesTiming(
   return result;
 }
 
+async function executeGetDailyTicketSales(
+  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
+  organizationId: string,
+  params: {
+    scope: string;
+    projectId?: string;
+    stopId?: string;
+    showId?: string;
+    dateRange: { start: string; end: string };
+    distributionWeight?: string;
+  }
+) {
+  const { scope, projectId, stopId, showId, dateRange, distributionWeight = "even" } = params;
+
+  const dailySales = await getDailySalesForScope(supabase, organizationId, {
+    scope: scope as "project" | "stop" | "show",
+    projectId,
+    stopId,
+    showId,
+    startDate: dateRange.start,
+    endDate: dateRange.end,
+    distributionWeight: distributionWeight as DistributionWeight,
+  });
+
+  // Calculate summary statistics
+  const totalTickets = dailySales.reduce((sum, d) => sum + d.tickets, 0);
+  const totalRevenue = dailySales.reduce((sum, d) => sum + d.revenue, 0);
+  const daysWithSales = dailySales.filter(d => d.tickets > 0).length;
+  const avgTicketsPerDay = dailySales.length > 0 ? totalTickets / dailySales.length : 0;
+  const avgRevenuePerDay = dailySales.length > 0 ? totalRevenue / dailySales.length : 0;
+  const estimatedDays = dailySales.filter(d => d.isEstimated).length;
+
+  return {
+    dailySales,
+    summary: {
+      totalTickets,
+      totalRevenue,
+      daysWithSales,
+      totalDays: dailySales.length,
+      avgTicketsPerDay: Math.round(avgTicketsPerDay * 10) / 10,
+      avgRevenuePerDay: Math.round(avgRevenuePerDay),
+      estimatedDays,
+      exactDays: dailySales.length - estimatedDays,
+    },
+    dateRange,
+    distributionWeight,
+    note: estimatedDays > 0
+      ? `${estimatedDays} av ${dailySales.length} dager er estimater basert på fordeling av kumulative billettrapporter`
+      : "Alle dager har eksakte billettrapporter",
+  };
+}
+
+async function executeCalculatePeriodRoas(
+  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
+  organizationId: string,
+  params: {
+    scope: string;
+    projectId?: string;
+    stopId?: string;
+    dateRange: { start: string; end: string };
+    includeMva?: boolean;
+    includeDaily?: boolean;
+  }
+) {
+  const { scope, projectId, stopId, dateRange, includeMva = true, includeDaily = false } = params;
+
+  const metrics = await getPeriodMetrics(supabase, organizationId, {
+    scope: scope as "project" | "stop",
+    projectId,
+    stopId,
+    startDate: dateRange.start,
+    endDate: dateRange.end,
+    includeMva,
+    includeDaily,
+  });
+
+  return {
+    ...metrics,
+    dateRange,
+    includeMva,
+    note: metrics.adSpend === 0 && metrics.revenueDelta === 0
+      ? "Ingen data funnet for denne perioden. Sjekk at det finnes annonsekoblinger og billettrapporter."
+      : metrics.adSpend === 0
+        ? "Ingen annonsekostnader funnet for denne perioden."
+        : metrics.revenueDelta === 0
+          ? "Ingen billettsalg registrert i denne perioden."
+          : `ROAS beregnet fra ${dateRange.start} til ${dateRange.end}. Billettsalg er estimert basert på kumulative rapporter.`,
+  };
+}
+
 // Execute a tool and return the result
 async function executeTool(
   supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
@@ -1309,6 +1404,20 @@ async function executeTool(
         supabase,
         organizationId,
         toolInput as Parameters<typeof executeAnalyzeSalesTiming>[2]
+      );
+
+    case "getDailyTicketSales":
+      return executeGetDailyTicketSales(
+        supabase,
+        organizationId,
+        toolInput as Parameters<typeof executeGetDailyTicketSales>[2]
+      );
+
+    case "calculatePeriodRoas":
+      return executeCalculatePeriodRoas(
+        supabase,
+        organizationId,
+        toolInput as Parameters<typeof executeCalculatePeriodRoas>[2]
       );
 
     default:

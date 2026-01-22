@@ -302,6 +302,103 @@ Use this to understand sales velocity at different time points and identify patt
       required: ["scope", "analysisType"],
     },
   },
+  {
+    name: "getDailyTicketSales",
+    description: `Get estimated daily ticket sales and revenue for a date range.
+Distributes cumulative ticket report deltas across days to estimate daily sales.
+This matches what the dashboard chart shows.
+
+Use this tool when users ask about:
+- Daily ticket sales or revenue
+- Sales trends over time
+- Comparing sales across days
+- "How many tickets did we sell each day last week?"`,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        scope: {
+          type: "string",
+          enum: ["project", "stop", "show"],
+          description: "The scope of data to query",
+        },
+        projectId: {
+          type: "string",
+          description: "Project ID (required for project scope)",
+        },
+        stopId: {
+          type: "string",
+          description: "Stop ID (required for stop scope)",
+        },
+        showId: {
+          type: "string",
+          description: "Show ID (required for show scope)",
+        },
+        dateRange: {
+          type: "object",
+          properties: {
+            start: { type: "string", description: "Start date (YYYY-MM-DD)" },
+            end: { type: "string", description: "End date (YYYY-MM-DD)" },
+          },
+          required: ["start", "end"],
+          description: "Date range for daily sales data",
+        },
+        distributionWeight: {
+          type: "string",
+          enum: ["even", "early", "late"],
+          description: "How to distribute sales between snapshots. 'even' distributes equally, 'early' weights toward start, 'late' weights toward end. Default: even",
+        },
+      },
+      required: ["scope", "dateRange"],
+    },
+  },
+  {
+    name: "calculatePeriodRoas",
+    description: `Calculate ROAS, MER, and CPT for a specific date range.
+Uses daily ad spend and estimates revenue change from ticket snapshots.
+Returns metrics comparable to what the dashboard shows.
+
+Use this tool when users ask about:
+- ROAS for a specific period ("What's ROAS for last 7 days?")
+- Marketing efficiency over time
+- Cost per ticket for a period
+- Daily breakdown of marketing metrics`,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        scope: {
+          type: "string",
+          enum: ["project", "stop"],
+          description: "The scope of analysis",
+        },
+        projectId: {
+          type: "string",
+          description: "Project ID (required for project scope)",
+        },
+        stopId: {
+          type: "string",
+          description: "Stop ID (required for stop scope)",
+        },
+        dateRange: {
+          type: "object",
+          properties: {
+            start: { type: "string", description: "Start date (YYYY-MM-DD)" },
+            end: { type: "string", description: "End date (YYYY-MM-DD)" },
+          },
+          required: ["start", "end"],
+          description: "Date range for ROAS calculation",
+        },
+        includeMva: {
+          type: "boolean",
+          description: "Include Norwegian MVA (25% VAT) in ad spend calculations. Default: true",
+        },
+        includeDaily: {
+          type: "boolean",
+          description: "Include daily breakdown of metrics. Default: false",
+        },
+      },
+      required: ["scope", "dateRange"],
+    },
+  },
 ];
 
 // Chart configuration type for frontend rendering
