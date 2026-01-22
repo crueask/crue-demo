@@ -164,7 +164,7 @@ export function MotleyMessages({ messages, thinkingSteps, isProcessing }: Motley
 
             <div
               className={cn(
-                "max-w-[85%]",
+                "max-w-[700px]",
                 message.role === "user" ? "order-1" : "order-2"
               )}
             >
@@ -177,7 +177,7 @@ export function MotleyMessages({ messages, thinkingSteps, isProcessing }: Motley
 
               {/* Assistant message with inline thinking */}
               {message.role === "assistant" && (
-                <div className="rounded-2xl px-4 py-3 bg-gray-50 text-gray-900">
+                <div className="text-gray-900">
                   <div className="text-sm leading-relaxed space-y-3">
                     {/* Show thinking steps inline at the top of assistant response */}
                     {(() => {
@@ -234,7 +234,7 @@ export function MotleyMessages({ messages, thinkingSteps, isProcessing }: Motley
             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 via-pink-400 to-blue-400 flex items-center justify-center animate-pulse">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
-            <div className="bg-gray-50 rounded-2xl px-4 py-3">
+            <div className="py-2">
               <div className="flex items-center gap-1">
                 <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
                 <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
