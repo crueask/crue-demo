@@ -240,34 +240,40 @@ async function executeQueryData(
 
       if (!shows?.length) return { tickets: [], count: 0, summary: {}, currentSales: {} };
 
-      // Get all tickets ordered by reported_at descending to find the latest for each show
-      let query = supabase
+      // Get all tickets ordered by reported_at
+      const { data, error } = await supabase
         .from("tickets")
         .select("*, shows(date, name, stops(name, city))")
         .in("show_id", shows.map((s) => s.id))
-        .order("reported_at", { ascending: false });
+        .order("reported_at", { ascending: true });
 
-      const { data, error } = await query;
       if (error) throw error;
 
-      // IMPORTANT: Each ticket record represents CUMULATIVE sales at that point in time
-      // The latest ticket record for each show contains the CURRENT total, not an increment
-      // Group by show_id and get the latest (first due to descending order) for each
-      const latestByShow: Record<string, { quantity_sold: number; revenue: number; reported_at: string; show: unknown }> = {};
       const allTicketReports = data || [];
 
+      // IMPORTANT: Each ticket record represents CUMULATIVE sales at that point in time
+      // Group by show_id and track both earliest and latest for delta calculation
+      const reportsByShow: Record<string, Array<{ quantity_sold: number; revenue: number; reported_at: string; show: unknown }>> = {};
+
       for (const ticket of allTicketReports) {
-        if (!latestByShow[ticket.show_id]) {
-          latestByShow[ticket.show_id] = {
-            quantity_sold: ticket.quantity_sold || 0,
-            revenue: Number(ticket.revenue) || 0,
-            reported_at: ticket.reported_at,
-            show: ticket.shows,
-          };
+        if (!reportsByShow[ticket.show_id]) {
+          reportsByShow[ticket.show_id] = [];
         }
+        reportsByShow[ticket.show_id].push({
+          quantity_sold: ticket.quantity_sold || 0,
+          revenue: Number(ticket.revenue) || 0,
+          reported_at: ticket.reported_at,
+          show: ticket.shows,
+        });
       }
 
-      // Calculate current totals from the LATEST report per show (not sum of all reports)
+      // Get latest report per show for current totals
+      const latestByShow: Record<string, { quantity_sold: number; revenue: number; reported_at: string; show: unknown }> = {};
+      for (const [showId, reports] of Object.entries(reportsByShow)) {
+        latestByShow[showId] = reports[reports.length - 1]; // Last one is latest (ascending order)
+      }
+
+      // Calculate current totals from the LATEST report per show
       const currentSalesPerShow = Object.entries(latestByShow).map(([showId, data]) => ({
         showId,
         ...data,
@@ -276,6 +282,45 @@ async function executeQueryData(
       const totalTickets = currentSalesPerShow.reduce((sum, s) => sum + s.quantity_sold, 0);
       const totalRevenue = currentSalesPerShow.reduce((sum, s) => sum + s.revenue, 0);
       const totalCapacity = shows.reduce((sum, s) => sum + (s.capacity || 0), 0);
+
+      // Calculate period delta if dateRange is provided
+      let periodDelta = null;
+      if (dateRange) {
+        let periodStartTickets = 0;
+        let periodStartRevenue = 0;
+        let periodEndTickets = 0;
+        let periodEndRevenue = 0;
+
+        for (const reports of Object.values(reportsByShow)) {
+          // Find the report closest to (but before or at) the start of the period
+          const beforePeriod = reports.filter(r => r.reported_at.split("T")[0] < dateRange.start);
+          const startReport = beforePeriod.length > 0 ? beforePeriod[beforePeriod.length - 1] : null;
+
+          // Find the report closest to (but before or at) the end of the period
+          const beforeEnd = reports.filter(r => r.reported_at.split("T")[0] <= dateRange.end);
+          const endReport = beforeEnd.length > 0 ? beforeEnd[beforeEnd.length - 1] : null;
+
+          if (startReport) {
+            periodStartTickets += startReport.quantity_sold;
+            periodStartRevenue += startReport.revenue;
+          }
+          if (endReport) {
+            periodEndTickets += endReport.quantity_sold;
+            periodEndRevenue += endReport.revenue;
+          }
+        }
+
+        periodDelta = {
+          dateRange,
+          ticketsDelta: periodEndTickets - periodStartTickets,
+          revenueDelta: periodEndRevenue - periodStartRevenue,
+          periodStartTickets,
+          periodEndTickets,
+          periodStartRevenue,
+          periodEndRevenue,
+          note: "Delta calculated by comparing cumulative totals at period start vs end",
+        };
+      }
 
       return {
         tickets: allTicketReports, // All reports for historical analysis
@@ -296,6 +341,7 @@ async function executeQueryData(
           totalTickets,
           totalRevenue,
         },
+        periodDelta,
       };
     }
 

@@ -6,7 +6,11 @@ export const motleyTools: Anthropic.Tool[] = [
     name: "queryData",
     description: `Query ticket sales, shows, stops, or projects data with optional filters.
 Returns aggregated data based on the entity type and filters provided.
-Use this to get raw data before analysis.`,
+Use this to get raw data before analysis.
+
+For tickets: Returns current totals plus period delta if dateRange is provided.
+The periodDelta shows tickets and revenue CHANGE during that period (comparing cumulative snapshots).
+Use dateRange to calculate "revenue in the last X days" or "tickets sold this week".`,
     input_schema: {
       type: "object" as const,
       properties: {
@@ -33,7 +37,7 @@ Use this to get raw data before analysis.`,
             start: { type: "string", description: "Start date (YYYY-MM-DD)" },
             end: { type: "string", description: "End date (YYYY-MM-DD)" },
           },
-          description: "Filter by date range (optional)",
+          description: "For tickets: calculates delta (change) in tickets/revenue during this period. For shows: filters shows by date.",
         },
         includeDetails: {
           type: "boolean",
