@@ -202,3 +202,35 @@
   animation: motley-gradient 4s ease infinite;
 }
 
+/* Word-by-word fade/blur animation for Motley responses */
+@keyframes wordReveal {
+  0% {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(2px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+.word-fade-in {
+  animation: wordReveal 0.15s ease-out forwards;
+}
+
+/* Word animator container */
+.word-animator {
+  line-height: 1.6;
+}
+
+.word-animator span {
+  display: inline;
+}
+
+/* Only apply will-change to animating words to save GPU memory */
+.word-animator .word-fade-in {
+  will-change: opacity, filter, transform;
+}
+
