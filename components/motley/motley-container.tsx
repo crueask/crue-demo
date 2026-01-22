@@ -17,13 +17,39 @@ interface MotleyContainerProps {
     name: string;
     city?: string;
   }>;
+  conversationId?: string; // Optional: continue existing conversation
+  initialMessages?: Message[]; // Optional: pre-loaded messages
+  saveMessages?: boolean; // Optional: default true, set to false to skip persistence
+  onConversationIdChange?: (id: string) => void; // Callback when conversationId changes
+  showHeader?: boolean; // Show conversation header with context info
 }
 
-export function MotleyContainer({ context, stops }: MotleyContainerProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
+export function MotleyContainer({
+  context,
+  stops,
+  conversationId: initialConversationId,
+  initialMessages,
+  saveMessages = true,
+  onConversationIdChange,
+  showHeader = false,
+}: MotleyContainerProps) {
+  const [messages, setMessages] = useState<Message[]>(initialMessages || []);
   const [isProcessing, setIsProcessing] = useState(false);
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
+  const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Update messages when initialMessages change (e.g., loading existing conversation)
+  useEffect(() => {
+    if (initialMessages) {
+      setMessages(initialMessages);
+    }
+  }, [initialMessages]);
+
+  // Update conversationId when initial changes
+  useEffect(() => {
+    setConversationId(initialConversationId);
+  }, [initialConversationId]);
 
   // Generate context-aware suggestions (Norwegian)
   const suggestions = context.type === "project"
@@ -68,6 +94,8 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
             content: m.content,
           })),
           context,
+          conversationId,
+          saveMessages,
         }),
         signal: abortControllerRef.current.signal,
       });
@@ -180,6 +208,12 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
                     ? { ...m, isStreaming: false, thinkingSteps: currentThinkingSteps }
                     : m
                 ));
+
+                // Update conversationId if returned from API
+                if (data.conversationId && data.conversationId !== conversationId) {
+                  setConversationId(data.conversationId);
+                  onConversationIdChange?.(data.conversationId);
+                }
                 break;
 
               case "error":
@@ -226,7 +260,7 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
       setIsProcessing(false);
       abortControllerRef.current = null;
     }
-  }, [messages, context, isProcessing]);
+  }, [messages, context, isProcessing, conversationId, saveMessages, onConversationIdChange]);
 
   // Cleanup on unmount
   useEffect(() => {

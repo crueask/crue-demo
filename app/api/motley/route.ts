@@ -148,6 +148,8 @@ interface MotleyRequest {
     projectId?: string;
     projectName?: string;
   };
+  conversationId?: string; // Optional: if provided, continue existing conversation
+  saveMessages?: boolean; // Optional: default true, set to false to skip persistence
 }
 
 // Helper: Get current ticket totals for shows (using latest report per show, not sum)
@@ -1588,8 +1590,8 @@ export async function POST(req: Request) {
     }
     console.log("1. ANTHROPIC_API_KEY is configured, length:", process.env.ANTHROPIC_API_KEY.length);
 
-    const { messages, context }: MotleyRequest = await req.json();
-    console.log("2. Parsed request body - messages:", messages?.length, "context:", context?.type);
+    const { messages, context, conversationId: inputConversationId, saveMessages = true }: MotleyRequest = await req.json();
+    console.log("2. Parsed request body - messages:", messages?.length, "context:", context?.type, "conversationId:", inputConversationId);
 
     // Verify user is authenticated
     const supabase = await createClient();
@@ -1622,6 +1624,67 @@ export async function POST(req: Request) {
     const organizationId = membership.organization_id;
     const organizations = membership.organizations as unknown as { name: string } | null;
     const organizationName = organizations?.name;
+
+    // Handle conversation persistence
+    let conversationId = inputConversationId;
+
+    if (saveMessages) {
+      if (conversationId) {
+        // Verify user has access to this conversation
+        const { data: existingConv, error: convError } = await supabase
+          .from("chat_conversations")
+          .select("id")
+          .eq("id", conversationId)
+          .eq("user_id", user.id)
+          .single();
+
+        if (convError || !existingConv) {
+          console.log("Conversation not found or not authorized:", conversationId);
+          return new Response("Conversation not found or not authorized", { status: 404 });
+        }
+      } else {
+        // Create a new conversation
+        const { data: newConv, error: createError } = await supabase
+          .from("chat_conversations")
+          .insert({
+            organization_id: organizationId,
+            user_id: user.id,
+            context: {
+              type: context.type,
+              projectId: context.projectId,
+              projectName: context.projectName,
+              organizationName,
+            },
+            project_id: context.projectId || null,
+          })
+          .select("id")
+          .single();
+
+        if (createError || !newConv) {
+          console.error("Failed to create conversation:", createError);
+          return new Response("Failed to create conversation", { status: 500 });
+        }
+
+        conversationId = newConv.id;
+        console.log("Created new conversation:", conversationId);
+      }
+
+      // Save the user's message (the last one in the array, which is the new message)
+      const lastUserMessage = messages[messages.length - 1];
+      if (lastUserMessage && lastUserMessage.role === "user") {
+        const { error: msgError } = await supabase
+          .from("chat_messages")
+          .insert({
+            conversation_id: conversationId,
+            role: "user",
+            content: lastUserMessage.content,
+          });
+
+        if (msgError) {
+          console.error("Failed to save user message:", msgError);
+        }
+      }
+    }
 
     // Build context for the prompt
     const motleyContext: MotleyContext = {
@@ -1658,6 +1721,9 @@ export async function POST(req: Request) {
           let continueLoop = true;
           let currentMessages = [...anthropicMessages];
           let toolCallCount = 0;
+          let fullAssistantContent = ""; // Collect full response for persistence
+          const collectedCharts: ChartConfig[] = []; // Collect charts for persistence
+          const collectedThinkingSteps: Array<{ type: string; title: string; toolName?: string; content?: string }> = [];
 
           while (continueLoop) {
             // Safety check: prevent timeout by limiting iterations and time
@@ -1739,6 +1805,12 @@ export async function POST(req: Request) {
                 controller.enqueue(
                   encoder.encode(`data: ${JSON.stringify({ type: eventType, content: block.text })}\n\n`)
                 );
+                // Collect content for persistence
+                if (!hasToolUse) {
+                  fullAssistantContent += block.text;
+                } else {
+                  collectedThinkingSteps.push({ type: "analysis", title: "Tenker...", content: block.text });
+                }
               } else if (block.type === "tool_use") {
                 // Stream tool use event
                 controller.enqueue(
@@ -1750,6 +1822,8 @@ export async function POST(req: Request) {
                     })}\n\n`
                   )
                 );
+                // Collect tool call for persistence
+                collectedThinkingSteps.push({ type: "tool_call", title: block.name, toolName: block.name });
 
                 // Execute the tool with user's supabase client (respects RLS)
                 try {
@@ -1784,6 +1858,8 @@ export async function POST(req: Request) {
                         })}\n\n`
                       )
                     );
+                    // Collect chart for persistence
+                    collectedCharts.push(toolResult as ChartConfig);
                   }
 
                   // Add assistant message and tool result to continue conversation
@@ -1832,8 +1908,43 @@ export async function POST(req: Request) {
             }
           }
 
-          // Send done event
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
+          // Save assistant message if persistence is enabled
+          if (saveMessages && conversationId && fullAssistantContent) {
+            try {
+              await supabase
+                .from("chat_messages")
+                .insert({
+                  conversation_id: conversationId,
+                  role: "assistant",
+                  content: fullAssistantContent,
+                  charts: collectedCharts.length > 0 ? collectedCharts : null,
+                  thinking_steps: collectedThinkingSteps.length > 0 ? collectedThinkingSteps : null,
+                });
+
+              // Generate a title if this is a new conversation (only 1 user message)
+              const { data: msgCount } = await supabase
+                .from("chat_messages")
+                .select("id", { count: "exact", head: true })
+                .eq("conversation_id", conversationId);
+
+              if (msgCount === null || (typeof msgCount === "object" && "count" in msgCount && (msgCount as { count: number }).count <= 2)) {
+                // Auto-generate title from first user message (truncate to 100 chars)
+                const firstUserMsg = messages.find(m => m.role === "user");
+                if (firstUserMsg) {
+                  const title = firstUserMsg.content.slice(0, 100) + (firstUserMsg.content.length > 100 ? "..." : "");
+                  await supabase
+                    .from("chat_conversations")
+                    .update({ title })
+                    .eq("id", conversationId);
+                }
+              }
+            } catch (saveError) {
+              console.error("Failed to save assistant message:", saveError);
+            }
+          }
+
+          // Send done event with conversationId
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done", conversationId })}\n\n`));
           controller.close();
         } catch (error) {
           console.error("Streaming error:", error);

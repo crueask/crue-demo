@@ -340,6 +340,10 @@ export interface Database {
           user_id: string;
           title: string | null;
           context: Json | null;
+          project_id: string | null;
+          updated_at: string;
+          is_archived: boolean;
+          message_count: number;
           created_at: string;
         };
         Insert: {
@@ -348,6 +352,10 @@ export interface Database {
           user_id: string;
           title?: string | null;
           context?: Json | null;
+          project_id?: string | null;
+          updated_at?: string;
+          is_archived?: boolean;
+          message_count?: number;
           created_at?: string;
         };
         Update: {
@@ -356,6 +364,10 @@ export interface Database {
           user_id?: string;
           title?: string | null;
           context?: Json | null;
+          project_id?: string | null;
+          updated_at?: string;
+          is_archived?: boolean;
+          message_count?: number;
           created_at?: string;
         };
       };
@@ -366,6 +378,8 @@ export interface Database {
           role: "user" | "assistant" | "system";
           content: string;
           tool_calls: Json | null;
+          charts: Json | null;
+          thinking_steps: Json | null;
           created_at: string;
         };
         Insert: {
@@ -374,6 +388,8 @@ export interface Database {
           role: "user" | "assistant" | "system";
           content: string;
           tool_calls?: Json | null;
+          charts?: Json | null;
+          thinking_steps?: Json | null;
           created_at?: string;
         };
         Update: {
@@ -382,6 +398,52 @@ export interface Database {
           role?: "user" | "assistant" | "system";
           content?: string;
           tool_calls?: Json | null;
+          charts?: Json | null;
+          thinking_steps?: Json | null;
+          created_at?: string;
+        };
+      };
+      chat_shares: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          created_by: string;
+          share_type: "link" | "user";
+          slug: string | null;
+          access_type: "password" | "open";
+          password_hash: string | null;
+          expires_at: string | null;
+          shared_with_user_id: string | null;
+          view_count: number;
+          last_viewed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          created_by: string;
+          share_type: "link" | "user";
+          slug?: string | null;
+          access_type?: "password" | "open";
+          password_hash?: string | null;
+          expires_at?: string | null;
+          shared_with_user_id?: string | null;
+          view_count?: number;
+          last_viewed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          conversation_id?: string;
+          created_by?: string;
+          share_type?: "link" | "user";
+          slug?: string | null;
+          access_type?: "password" | "open";
+          password_hash?: string | null;
+          expires_at?: string | null;
+          shared_with_user_id?: string | null;
+          view_count?: number;
+          last_viewed_at?: string | null;
           created_at?: string;
         };
       };
@@ -519,6 +581,7 @@ export type Report = Database["public"]["Tables"]["reports"]["Row"];
 export type SharedDashboard = Database["public"]["Tables"]["shared_dashboards"]["Row"];
 export type ChatConversation = Database["public"]["Tables"]["chat_conversations"]["Row"];
 export type ChatMessage = Database["public"]["Tables"]["chat_messages"]["Row"];
+export type ChatShare = Database["public"]["Tables"]["chat_shares"]["Row"];
 export type DataSummary = Database["public"]["Tables"]["data_summaries"]["Row"];
 export type UserProfile = Database["public"]["Tables"]["user_profiles"]["Row"];
 export type ProjectMember = Database["public"]["Tables"]["project_members"]["Row"];
@@ -582,3 +645,39 @@ export interface StopPerformance {
   totalRevenue: number;
   avgFillRate: number | null;
 }
+
+// Motley Chat History types
+export interface MotleyContext {
+  type: "organization" | "project";
+  projectId?: string;
+  projectName?: string;
+  organizationName?: string;
+}
+
+export interface MotleyThinkingStep {
+  id: string;
+  type: "tool_call" | "analysis" | "conclusion";
+  title: string;
+  toolName?: string;
+  content?: string;
+  status: "pending" | "running" | "complete";
+}
+
+export interface MotleyChartConfig {
+  type: "line" | "bar" | "pie" | "area";
+  title: string;
+  data: Array<Record<string, unknown>>;
+  xKey: string;
+  yKeys: string[];
+  colors?: string[];
+}
+
+export type ChatConversationWithProject = ChatConversation & {
+  project?: { name: string } | null;
+};
+
+export type ChatConversationWithDetails = ChatConversation & {
+  project?: { name: string } | null;
+  messages?: ChatMessage[];
+  shares?: ChatShare[];
+};

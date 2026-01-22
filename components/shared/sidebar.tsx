@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   MessageSquare,
+  History,
   Settings,
 } from "lucide-react";
 
@@ -17,6 +18,7 @@ const navigation = [
 
 const secondaryNavigation = [
   { name: "AI Chat", href: "/dashboard/chat", icon: MessageSquare },
+  { name: "Samtalehistorikk", href: "/dashboard/chat/history", icon: History },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
