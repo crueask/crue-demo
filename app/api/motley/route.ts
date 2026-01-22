@@ -18,6 +18,57 @@ import {
 
 export const maxDuration = 60;
 
+// Safety limits to prevent timeout and token overflow
+const MAX_TOOL_CALLS = 6; // Max number of tool call iterations before forcing a response
+const MAX_EXECUTION_TIME_MS = 50000; // 50 seconds - leave 10s buffer for final response
+const MAX_TOOL_RESULT_LENGTH = 15000; // Max characters per tool result to prevent token overflow
+
+// Truncate large tool results to prevent token overflow
+function truncateToolResult(result: unknown): string {
+  const json = JSON.stringify(result);
+  if (json.length <= MAX_TOOL_RESULT_LENGTH) {
+    return json;
+  }
+
+  // Try to preserve structure by truncating arrays
+  if (typeof result === "object" && result !== null) {
+    const obj = result as Record<string, unknown>;
+
+    // Common large arrays to truncate
+    const arrayKeys = ["tickets", "dailySales", "dailyMetrics", "velocityCurve", "stops", "shows", "comparison"];
+    let truncated = { ...obj };
+
+    for (const key of arrayKeys) {
+      if (Array.isArray(truncated[key]) && (truncated[key] as unknown[]).length > 20) {
+        const arr = truncated[key] as unknown[];
+        truncated = {
+          ...truncated,
+          [key]: arr.slice(0, 20),
+          [`_${key}Truncated`]: true,
+          [`_${key}OriginalCount`]: arr.length,
+        };
+      }
+    }
+
+    const truncatedJson = JSON.stringify(truncated);
+    if (truncatedJson.length <= MAX_TOOL_RESULT_LENGTH) {
+      return truncatedJson;
+    }
+
+    // Still too large - aggressive truncation
+    return JSON.stringify({
+      _truncated: true,
+      _originalLength: json.length,
+      summary: obj.summary || obj.totals || null,
+      count: obj.count || obj.stopCount || obj.showCount || null,
+      note: obj.note || "Data truncated due to size. Key metrics preserved in summary.",
+    });
+  }
+
+  // Fallback: simple string truncation
+  return json.slice(0, MAX_TOOL_RESULT_LENGTH) + '..."_truncated":true}';
+}
+
 // Norwegian holidays helper
 function getNorwegianHolidays(year: number): Array<{ date: string; name: string; nameEn: string }> {
   // Calculate Easter Sunday using the Anonymous Gregorian algorithm
@@ -346,8 +397,11 @@ async function executeQueryData(
         };
       }
 
+      // Only include raw tickets if explicitly requested via includeDetails
+      // This prevents massive token usage from historical data
       return {
-        tickets: allTicketReports, // All reports for historical analysis
+        // Omit raw ticket data by default - use getDailyTicketSales for historical analysis
+        tickets: includeDetails ? allTicketReports.slice(0, 50) : [], // Limit even when requested
         count: allTicketReports.length,
         summary: {
           // Current totals based on latest report per show
@@ -357,13 +411,15 @@ async function executeQueryData(
           totalCapacity,
           fillRate: totalCapacity > 0 ? (totalTickets / totalCapacity) * 100 : null,
           showCount: shows.length,
-          note: "Totals are from the LATEST ticket report per show (cumulative sales), not sum of all reports",
+          note: "Totals are from the LATEST ticket report per show (cumulative sales). Use getDailyTicketSales for daily breakdown.",
         },
         currentSales: {
-          // Breakdown by show
-          byShow: currentSalesPerShow,
+          // Breakdown by show - limit to 30 entries
+          byShow: currentSalesPerShow.slice(0, 30),
           totalTickets,
           totalRevenue,
+          _truncated: currentSalesPerShow.length > 30,
+          _originalCount: currentSalesPerShow.length,
         },
         periodDelta,
       };
@@ -1356,6 +1412,96 @@ async function executeCalculatePeriodRoas(
   };
 }
 
+async function executeCalculateBatchPeriodRoas(
+  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
+  organizationId: string,
+  params: {
+    projectId: string;
+    stopIds?: string[];
+    dateRange: { start: string; end: string };
+    includeMva?: boolean;
+  }
+) {
+  const { projectId, stopIds, dateRange, includeMva = true } = params;
+
+  // Get all stops for the project if no specific stopIds provided
+  let stopsToAnalyze: Array<{ id: string; name: string; city: string }>;
+
+  if (stopIds && stopIds.length > 0) {
+    const { data: stops } = await supabase
+      .from("stops")
+      .select("id, name, city")
+      .in("id", stopIds);
+    stopsToAnalyze = stops || [];
+  } else {
+    const { data: stops } = await supabase
+      .from("stops")
+      .select("id, name, city")
+      .eq("project_id", projectId);
+    stopsToAnalyze = stops || [];
+  }
+
+  if (stopsToAnalyze.length === 0) {
+    return {
+      projectId,
+      dateRange,
+      stops: [],
+      totals: { adSpend: 0, revenueDelta: 0, ticketsDelta: 0, roas: null, cpt: null, mer: null },
+      note: "Ingen turnéstopp funnet for dette prosjektet.",
+    };
+  }
+
+  // Calculate metrics for each stop in parallel
+  const stopMetricsPromises = stopsToAnalyze.map(async (stop) => {
+    const metrics = await getPeriodMetrics(supabase, organizationId, {
+      scope: "stop",
+      stopId: stop.id,
+      startDate: dateRange.start,
+      endDate: dateRange.end,
+      includeMva,
+      includeDaily: false,
+    });
+
+    return {
+      stopId: stop.id,
+      stopName: stop.name,
+      city: stop.city,
+      ...metrics,
+    };
+  });
+
+  const stopMetrics = await Promise.all(stopMetricsPromises);
+
+  // Calculate project totals
+  const totals = {
+    adSpend: stopMetrics.reduce((sum, s) => sum + (s.adSpend || 0), 0),
+    revenueDelta: stopMetrics.reduce((sum, s) => sum + (s.revenueDelta || 0), 0),
+    ticketsDelta: stopMetrics.reduce((sum, s) => sum + (s.ticketsDelta || 0), 0),
+    roas: null as number | null,
+    cpt: null as number | null,
+    mer: null as number | null,
+  };
+
+  // Calculate aggregate metrics
+  if (totals.adSpend > 0) {
+    totals.roas = totals.revenueDelta / totals.adSpend;
+    totals.mer = (totals.adSpend / totals.revenueDelta) * 100;
+  }
+  if (totals.ticketsDelta > 0 && totals.adSpend > 0) {
+    totals.cpt = totals.adSpend / totals.ticketsDelta;
+  }
+
+  return {
+    projectId,
+    dateRange,
+    includeMva,
+    stops: stopMetrics,
+    totals,
+    stopCount: stopsToAnalyze.length,
+    note: `ROAS beregnet for ${stopsToAnalyze.length} turnéstopp fra ${dateRange.start} til ${dateRange.end}.`,
+  };
+}
+
 // Execute a tool and return the result
 async function executeTool(
   supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
@@ -1418,6 +1564,13 @@ async function executeTool(
         supabase,
         organizationId,
         toolInput as Parameters<typeof executeCalculatePeriodRoas>[2]
+      );
+
+    case "calculateBatchPeriodRoas":
+      return executeCalculateBatchPeriodRoas(
+        supabase,
+        organizationId,
+        toolInput as Parameters<typeof executeCalculateBatchPeriodRoas>[2]
       );
 
     default:
@@ -1498,13 +1651,38 @@ export async function POST(req: Request) {
 
     // Create a streaming response
     const encoder = new TextEncoder();
+    const startTime = Date.now();
     const stream = new ReadableStream({
       async start(controller) {
         try {
           let continueLoop = true;
           let currentMessages = [...anthropicMessages];
+          let toolCallCount = 0;
 
           while (continueLoop) {
+            // Safety check: prevent timeout by limiting iterations and time
+            const elapsedMs = Date.now() - startTime;
+            if (toolCallCount >= MAX_TOOL_CALLS || elapsedMs > MAX_EXECUTION_TIME_MS) {
+              console.log(`Safety limit reached: toolCalls=${toolCallCount}, elapsed=${elapsedMs}ms`);
+              // Force a final response without tools
+              const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+              const finalResponse = await client.messages.create({
+                model: "claude-sonnet-4-20250514",
+                max_tokens: 2048,
+                system: fullSystemPrompt + "\n\nIMPORTANT: You must provide a final response NOW based on the data you have gathered. Do NOT call any more tools. Summarize what you found and provide your best answer.",
+                messages: currentMessages,
+              });
+
+              for (const block of finalResponse.content) {
+                if (block.type === "text") {
+                  controller.enqueue(
+                    encoder.encode(`data: ${JSON.stringify({ type: "text", content: block.text })}\n\n`)
+                  );
+                }
+              }
+              continueLoop = false;
+              break;
+            }
             let response;
             try {
               console.log("Calling Anthropic API...");
@@ -1577,6 +1755,10 @@ export async function POST(req: Request) {
                     block.input as Record<string, unknown>
                   );
 
+                  // Increment tool call counter
+                  toolCallCount++;
+                  console.log(`Tool call ${toolCallCount}/${MAX_TOOL_CALLS}: ${block.name}`);
+
                   // Send tool_complete event so frontend can mark step as complete
                   controller.enqueue(
                     encoder.encode(
@@ -1600,6 +1782,10 @@ export async function POST(req: Request) {
                   }
 
                   // Add assistant message and tool result to continue conversation
+                  // Truncate large results to prevent token overflow
+                  const truncatedResult = truncateToolResult(toolResult);
+                  console.log(`Tool result size: ${truncatedResult.length} chars`);
+
                   currentMessages = [
                     ...currentMessages,
                     { role: "assistant" as const, content: response.content },
@@ -1609,7 +1795,7 @@ export async function POST(req: Request) {
                         {
                           type: "tool_result" as const,
                           tool_use_id: block.id,
-                          content: JSON.stringify(toolResult),
+                          content: truncatedResult,
                         },
                       ],
                     },

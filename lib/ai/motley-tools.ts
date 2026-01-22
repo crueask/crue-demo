@@ -361,7 +361,9 @@ Use this tool when users ask about:
 - ROAS for a specific period ("What's ROAS for last 7 days?")
 - Marketing efficiency over time
 - Cost per ticket for a period
-- Daily breakdown of marketing metrics`,
+- Daily breakdown of marketing metrics
+
+IMPORTANT: For analyzing MULTIPLE stops at once, use calculateBatchPeriodRoas instead - it's much faster!`,
     input_schema: {
       type: "object" as const,
       properties: {
@@ -397,6 +399,46 @@ Use this tool when users ask about:
         },
       },
       required: ["scope", "dateRange"],
+    },
+  },
+  {
+    name: "calculateBatchPeriodRoas",
+    description: `Calculate ROAS, MER, and CPT for MULTIPLE stops at once in a single call.
+This is much more efficient than calling calculatePeriodRoas multiple times.
+
+ALWAYS use this tool instead of multiple calculatePeriodRoas calls when:
+- Analyzing all stops in a project
+- Comparing ROAS across multiple stops
+- User asks about "all shows" or "all stops"
+
+Returns an array with metrics for each stop, plus aggregated project totals.`,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Project ID - will calculate for all stops in this project",
+        },
+        stopIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: specific stop IDs to analyze. If not provided, analyzes all stops in the project.",
+        },
+        dateRange: {
+          type: "object",
+          properties: {
+            start: { type: "string", description: "Start date (YYYY-MM-DD)" },
+            end: { type: "string", description: "End date (YYYY-MM-DD)" },
+          },
+          required: ["start", "end"],
+          description: "Date range for ROAS calculation",
+        },
+        includeMva: {
+          type: "boolean",
+          description: "Include Norwegian MVA (25% VAT) in ad spend calculations. Default: true",
+        },
+      },
+      required: ["projectId", "dateRange"],
     },
   },
 ];
