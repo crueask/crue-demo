@@ -185,8 +185,9 @@ export function getContextPrompt(context: MotleyContext): string {
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Oslo' }); // YYYY-MM-DD format
 
   let prompt = `\n\n## Current Context\n`;
-  prompt += `- Today's date: ${today}\n`;
-  prompt += `- When user says "last X days", calculate from today (${today})\n`;
+  prompt += `- **TODAY'S DATE: ${today}** (IMPORTANT: Use this for all date calculations!)\n`;
+  prompt += `- "Last 4 days" = ${today} minus 4 days. Example: if today is 2026-01-22, last 4 days is 2026-01-18 to 2026-01-21\n`;
+  prompt += `- NEVER use dates from your training data - always calculate from today (${today})\n`;
   prompt += `- Organization ID: ${context.organizationId}\n`;
 
   if (context.organizationName) {
