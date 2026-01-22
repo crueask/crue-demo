@@ -251,7 +251,18 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
 
       {/* Messages and input container */}
       {hasMessages && (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="relative">
+          {/* Subtle glow effect while processing */}
+          {isProcessing && (
+            <div
+              className="absolute -inset-2 rounded-2xl opacity-60 blur-xl transition-opacity duration-500"
+              style={{
+                background: "linear-gradient(135deg, rgba(192, 132, 252, 0.15), rgba(236, 72, 153, 0.15), rgba(96, 165, 250, 0.15))",
+                animation: "pulse 2s ease-in-out infinite",
+              }}
+            />
+          )}
+          <div className="relative bg-white rounded-lg border border-gray-200 overflow-hidden">
           <MotleyMessages
             messages={messages}
             thinkingSteps={thinkingSteps}
@@ -265,6 +276,7 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
               isProcessing={isProcessing}
               placeholder="Følg opp med et nytt spørsmål..."
             />
+          </div>
           </div>
         </div>
       )}
