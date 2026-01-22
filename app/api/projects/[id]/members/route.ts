@@ -272,7 +272,7 @@ export async function POST(
       }
 
       // Get project name for email notification
-      const { data: project } = await supabase
+      const { data: projectData } = await supabase
         .from("projects")
         .select("name")
         .eq("id", projectId)
@@ -286,7 +286,7 @@ export async function POST(
         // Include email data so the client can send a notification email
         emailData: {
           to: email,
-          projectName: project?.name,
+          projectName: projectData?.name,
           role,
           inviterEmail: user?.email,
           isExistingUser: true,
