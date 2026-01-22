@@ -1369,10 +1369,10 @@ export async function POST(req: Request) {
                   )
                 );
 
-                // Execute the tool
+                // Execute the tool - use admin client to bypass RLS for ad data tables
                 try {
                   const toolResult = await executeTool(
-                    supabase,
+                    adminClient,
                     organizationId,
                     block.name,
                     block.input as Record<string, unknown>
