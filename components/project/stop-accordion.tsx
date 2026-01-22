@@ -35,6 +35,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { TicketsChart } from "@/components/project/tickets-chart";
 import { StopAdConnections } from "@/components/project/stop-ad-connections";
 import { getStopAdSpend, applyMva } from "@/lib/ad-spend";
+import {
+  distributeTicketReports,
+  getEffectiveSalesDate,
+  type TicketReport,
+  addDays,
+  daysBetween,
+} from "@/lib/chart-utils";
 
 interface Ticket {
   id: string;
@@ -184,26 +191,13 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     return `${formatShortDate(firstDate)} - ${formatShortDate(lastDate)}`;
   };
 
-  // Helper functions for date calculations
-  const daysBetween = (start: string, end: string): number => {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    return Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  };
-
-  const addDays = (dateStr: string, days: number): string => {
-    const date = new Date(dateStr);
-    date.setDate(date.getDate() + days);
-    return date.toISOString().split('T')[0];
-  };
-
   async function loadStopChartData() {
     if (stopChartData.length > 0) return; // Already loaded
 
     setLoadingCharts(true);
     const supabase = createClient();
 
-    // Calculate distributed ticket data for chart with estimations
+    // Calculate distributed ticket data for chart with estimations using shared function
     interface DistributedTicket {
       date: string;
       showId: string;
@@ -214,7 +208,12 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
 
     const distributedData: DistributedTicket[] = [];
 
-    // Calculate deltas for each show with estimation distribution
+    // Build report dates per show (for marking actual vs estimated)
+    const reportDatesByShow: Record<string, Set<string>> = {};
+
+    // First pass: collect all ticket data and report dates
+    const ticketsByShowId: Record<string, TicketReport[]> = {};
+
     for (const show of stop.shows) {
       const { data: ticketSnapshots } = await supabase
         .from("tickets")
@@ -225,132 +224,38 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
 
       if (!ticketSnapshots || ticketSnapshots.length === 0) continue;
 
-      const salesStartDate = show.sales_start_date;
+      ticketsByShowId[show.id] = ticketSnapshots as TicketReport[];
 
-      // Helper to get the effective sales date from a ticket
-      // Reports received on a given day represent sales from the previous day
-      const getEffectiveSalesDate = (ticket: { sale_date: string | null; reported_at: string | null }): string | null => {
-        if (ticket.sale_date) return ticket.sale_date;
-        if (ticket.reported_at) {
-          // Subtract one day from reported_at to get actual sales date
-          return addDays(ticket.reported_at.split('T')[0], -1);
+      // Build report dates set
+      reportDatesByShow[show.id] = new Set();
+      for (const ticket of ticketSnapshots) {
+        const effectiveDate = getEffectiveSalesDate(ticket as TicketReport);
+        if (effectiveDate) {
+          reportDatesByShow[show.id].add(effectiveDate);
         }
-        return null;
-      };
-
-      // Handle single report case
-      if (ticketSnapshots.length === 1) {
-        const ticket = ticketSnapshots[0];
-        const ticketDate = getEffectiveSalesDate(ticket);
-        if (!ticketDate) continue;
-
-        if (salesStartDate && salesStartDate < ticketDate) {
-          const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
-          const ticketsPerDay = ticket.quantity_sold / totalDays;
-          const ticketRevenue = Number(ticket.revenue) || 0;
-          const revenuePerDay = ticketRevenue / totalDays;
-
-          for (let i = 0; i < totalDays; i++) {
-            const date = addDays(salesStartDate, i);
-            const isLastDay = i === totalDays - 1;
-            distributedData.push({
-              date,
-              showId: show.id,
-              tickets: Math.round(ticketsPerDay),
-              revenue: revenuePerDay,
-              isEstimated: !isLastDay,
-            });
-          }
-        }
-        continue;
       }
+    }
 
-      // Handle multiple reports
-      // Only use salesStartDate for distribution if it exists
-      let previousDate: string | null = salesStartDate;
-      let previousTotal = 0;
-      let previousRevenue = 0;
-      let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
-      let previousDateIsSalesStart = !!salesStartDate; // Track if previousDate came from salesStartDate vs a report
+    // Use shared distribution function for each show
+    for (const show of stop.shows) {
+      const tickets = ticketsByShowId[show.id];
+      if (!tickets) continue;
 
-      for (let i = 0; i < ticketSnapshots.length; i++) {
-        const ticket = ticketSnapshots[i];
-        const ticketDate = getEffectiveSalesDate(ticket);
-        if (!ticketDate) continue;
+      const distributed = distributeTicketReports(
+        tickets,
+        show.id,
+        show.sales_start_date,
+        reportDatesByShow[show.id] || new Set()
+      );
 
-        const delta = ticket.quantity_sold - previousTotal;
-        const ticketRevenue = Number(ticket.revenue) || 0;
-        const revenueDelta = ticketRevenue - previousRevenue;
-
-        // For the first report without salesStartDate, we can't show anything
-        // (we don't know when sales started, so no baseline to compare against)
-        // But we establish the baseline for subsequent reports
-        if (!hasBaseline) {
-          previousTotal = ticket.quantity_sold;
-          previousRevenue = ticketRevenue;
-          previousDate = ticketDate;
-          hasBaseline = true;
-          previousDateIsSalesStart = false; // This date came from a report, not salesStartDate
-          continue;
-        }
-
-        // Skip if delta is 0 or negative (no new tickets sold)
-        if (delta <= 0) {
-          previousTotal = ticket.quantity_sold;
-          previousRevenue = ticketRevenue;
-          previousDate = ticketDate;
-          previousDateIsSalesStart = false;
-          continue;
-        }
-
-        // Only distribute if we have a valid previous date that's before the current date
-        const canDistribute = previousDate && previousDate < ticketDate;
-
-        if (!canDistribute) {
-          // No distribution - show actual on report date
-          distributedData.push({
-            date: ticketDate,
-            showId: show.id,
-            tickets: delta,
-            revenue: revenueDelta,
-            isEstimated: false,
-          });
-        } else {
-          // If previousDate came from a report (not salesStartDate), start distribution from day after
-          // because the report date's sales are already accounted for in the cumulative total
-          const distributionStartDate = previousDateIsSalesStart ? previousDate! : addDays(previousDate!, 1);
-          const totalDays = daysBetween(distributionStartDate, ticketDate) + 1;
-
-          if (totalDays <= 1) {
-            distributedData.push({
-              date: ticketDate,
-              showId: show.id,
-              tickets: delta,
-              revenue: revenueDelta,
-              isEstimated: false,
-            });
-          } else {
-            const ticketsPerDay = delta / totalDays;
-            const revenuePerDay = revenueDelta / totalDays;
-
-            for (let j = 0; j < totalDays; j++) {
-              const date = addDays(distributionStartDate, j);
-              const isLastDay = j === totalDays - 1;
-              distributedData.push({
-                date,
-                showId: show.id,
-                tickets: Math.round(ticketsPerDay),
-                revenue: revenuePerDay,
-                isEstimated: !isLastDay,
-              });
-            }
-          }
-        }
-
-        previousTotal = ticket.quantity_sold;
-        previousRevenue = ticketRevenue;
-        previousDate = ticketDate;
-        previousDateIsSalesStart = false; // From now on, previousDate is always a report date
+      for (const item of distributed) {
+        distributedData.push({
+          date: item.date,
+          showId: item.entityId,
+          tickets: item.tickets,
+          revenue: item.revenue,
+          isEstimated: item.isEstimated,
+        });
       }
     }
 
@@ -415,131 +320,31 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     const show = stop.shows.find(s => s.id === showId);
     if (!show) return;
 
-    // Calculate distributed ticket data
-    interface DistributedTicket {
-      date: string;
-      tickets: number;
-      isEstimated: boolean;
-    }
-
-    const distributedData: DistributedTicket[] = [];
-
     const { data: ticketSnapshots } = await supabase
       .from("tickets")
-      .select("quantity_sold, sale_date, reported_at")
+      .select("quantity_sold, revenue, sale_date, reported_at")
       .eq("show_id", showId)
       .order("sale_date", { ascending: true, nullsFirst: false })
       .order("reported_at", { ascending: true });
 
-    if (ticketSnapshots && ticketSnapshots.length > 0) {
-      const salesStartDate = show.sales_start_date;
-
-      // Helper to get the effective sales date from a ticket
-      // Reports received on a given day represent sales from the previous day
-      const getEffectiveSalesDate = (ticket: { sale_date: string | null; reported_at: string | null }): string | null => {
-        if (ticket.sale_date) return ticket.sale_date;
-        if (ticket.reported_at) {
-          // Subtract one day from reported_at to get actual sales date
-          return addDays(ticket.reported_at.split('T')[0], -1);
-        }
-        return null;
-      };
-
-      if (ticketSnapshots.length === 1) {
-        const ticket = ticketSnapshots[0];
-        const ticketDate = getEffectiveSalesDate(ticket);
-        if (ticketDate && salesStartDate && salesStartDate < ticketDate) {
-          const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
-          const ticketsPerDay = ticket.quantity_sold / totalDays;
-
-          for (let i = 0; i < totalDays; i++) {
-            const date = addDays(salesStartDate, i);
-            const isLastDay = i === totalDays - 1;
-            distributedData.push({
-              date,
-              tickets: Math.round(ticketsPerDay),
-              isEstimated: !isLastDay,
-            });
-          }
-        }
-      } else {
-        // Handle multiple reports - distribute deltas between consecutive reports
-        // Only use salesStartDate for distribution if it exists
-        let previousDate: string | null = salesStartDate;
-        let previousTotal = 0;
-        let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
-        let previousDateIsSalesStart = !!salesStartDate; // Track if previousDate came from salesStartDate vs a report
-
-        for (let i = 0; i < ticketSnapshots.length; i++) {
-          const ticket = ticketSnapshots[i];
-          const ticketDate = getEffectiveSalesDate(ticket);
-          if (!ticketDate) continue;
-
-          const delta = ticket.quantity_sold - previousTotal;
-
-          // For the first report without salesStartDate, we can't show anything
-          // (we don't know when sales started, so no baseline to compare against)
-          // But we establish the baseline for subsequent reports
-          if (!hasBaseline) {
-            previousTotal = ticket.quantity_sold;
-            previousDate = ticketDate;
-            hasBaseline = true; // Now we have a baseline for future reports
-            previousDateIsSalesStart = false; // This date came from a report, not salesStartDate
-            continue;
-          }
-
-          // Skip if delta is 0 or negative (no new tickets sold)
-          // But still update tracking variables
-          if (delta <= 0) {
-            previousTotal = ticket.quantity_sold;
-            previousDate = ticketDate;
-            previousDateIsSalesStart = false;
-            continue;
-          }
-
-          // Only distribute if we have a valid previous date that's before the current date
-          const canDistribute = previousDate && previousDate < ticketDate;
-
-          if (!canDistribute) {
-            // No distribution - show actual on effective sales date
-            distributedData.push({
-              date: ticketDate,
-              tickets: delta,
-              isEstimated: false,
-            });
-          } else {
-            // If previousDate came from a report (not salesStartDate), start distribution from day after
-            // because the report date's sales are already accounted for in the cumulative total
-            const distributionStartDate = previousDateIsSalesStart ? previousDate! : addDays(previousDate!, 1);
-            const totalDays = daysBetween(distributionStartDate, ticketDate) + 1;
-
-            if (totalDays <= 1) {
-              distributedData.push({
-                date: ticketDate,
-                tickets: delta,
-                isEstimated: false,
-              });
-            } else {
-              const ticketsPerDay = delta / totalDays;
-
-              for (let j = 0; j < totalDays; j++) {
-                const date = addDays(distributionStartDate, j);
-                const isLastDay = j === totalDays - 1;
-                distributedData.push({
-                  date,
-                  tickets: Math.round(ticketsPerDay),
-                  isEstimated: !isLastDay,
-                });
-              }
-            }
-          }
-
-          previousTotal = ticket.quantity_sold;
-          previousDate = ticketDate;
-          previousDateIsSalesStart = false; // From now on, previousDate is always a report date
-        }
+    // Build report dates set
+    const reportDates = new Set<string>();
+    for (const ticket of ticketSnapshots || []) {
+      const effectiveDate = getEffectiveSalesDate(ticket as TicketReport);
+      if (effectiveDate) {
+        reportDates.add(effectiveDate);
       }
     }
+
+    // Use shared distribution function
+    const distributedData = ticketSnapshots && ticketSnapshots.length > 0
+      ? distributeTicketReports(
+          ticketSnapshots as TicketReport[],
+          showId,
+          show.sales_start_date,
+          reportDates
+        )
+      : [];
 
     // Aggregate by date
     const ticketsByDate: Record<string, { actual: number; estimated: number }> = {};

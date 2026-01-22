@@ -196,19 +196,8 @@ async function getDashboardData() {
 
   const activeProjects = projects.filter(p => p.status === "active").length;
 
-  // Calculate distributed ticket data for chart
-  // Distributes sales linearly across gaps between reports
-  interface DistributedTicket {
-    date: string;
-    projectId: string;
-    tickets: number;
-    revenue: number;
-    isEstimated: boolean;
-  }
-
-  const distributedData: DistributedTicket[] = [];
-
-  // Build a set of report dates per project (for marking actual vs estimated)
+  // Calculate distributed ticket data for chart using shared function
+  // Build report dates per project first (for marking actual vs estimated)
   const reportDatesByProject: Record<string, Set<string>> = {};
 
   for (const showId of allShowIds) {
@@ -216,153 +205,43 @@ async function getDashboardData() {
     const projectId = showToProject[showId];
     if (!tickets || tickets.length === 0 || !projectId) continue;
 
-    // Initialize report dates set for this project if needed
     if (!reportDatesByProject[projectId]) {
       reportDatesByProject[projectId] = new Set();
     }
 
-    const salesStartDate = showInfoMap[showId]?.sales_start_date;
-
-    // Helper to get the effective sales date from a ticket
-    // Reports received on a given day represent sales from the previous day
-    const getEffectiveSalesDate = (ticket: TicketRow): string | null => {
-      if (ticket.sale_date) return ticket.sale_date;
-      if (ticket.reported_at) {
-        // Subtract one day from reported_at to get actual sales date
-        return addDays(ticket.reported_at.split('T')[0], -1);
-      }
-      return null;
-    };
-
-    // Sort tickets by effective sales date ascending
-    const sortedTickets = [...tickets].sort((a, b) => {
-      const dateA = getEffectiveSalesDate(a) || '';
-      const dateB = getEffectiveSalesDate(b) || '';
-      return dateA.localeCompare(dateB);
-    });
-
-    // Collect all report dates for this project
-    for (const ticket of sortedTickets) {
-      const effectiveDate = getEffectiveSalesDate(ticket);
+    for (const ticket of tickets) {
+      const effectiveDate = getEffectiveSalesDate(ticket as TicketReport);
       if (effectiveDate) {
         reportDatesByProject[projectId].add(effectiveDate);
       }
     }
+  }
 
-    // Handle single report case
-    if (sortedTickets.length === 1) {
-      const ticket = sortedTickets[0];
-      const ticketDate = getEffectiveSalesDate(ticket);
-      if (!ticketDate) continue;
+  // Distribute tickets using shared function
+  const distributedData: { date: string; projectId: string; tickets: number; revenue: number; isEstimated: boolean }[] = [];
 
-      // If sales_start_date exists and is before the report date, distribute
-      if (salesStartDate && salesStartDate < ticketDate) {
-        const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
-        const distributedTickets = distributeValues(ticket.quantity_sold, totalDays, 'even');
-        const distributedRevenue = distributeValues(Number(ticket.revenue), totalDays, 'even');
+  for (const showId of allShowIds) {
+    const tickets = ticketsByShow[showId];
+    const projectId = showToProject[showId];
+    if (!tickets || tickets.length === 0 || !projectId) continue;
 
-        for (let i = 0; i < totalDays; i++) {
-          const date = addDays(salesStartDate, i);
-          distributedData.push({
-            date,
-            projectId,
-            tickets: distributedTickets[i],
-            revenue: distributedRevenue[i],
-            isEstimated: !reportDatesByProject[projectId]?.has(date),
-          });
-        }
-      }
-      // If no sales_start_date (or it's >= report date) with only 1 report,
-      // skip this show - we can't calculate meaningful daily changes without a baseline
-      continue;
-    }
+    const salesStartDate = showInfoMap[showId]?.sales_start_date;
+    const distributed = distributeTicketReports(
+      tickets as TicketReport[],
+      projectId,
+      salesStartDate,
+      reportDatesByProject[projectId] || new Set()
+    );
 
-    // Handle multiple reports - distribute deltas between consecutive reports
-    // Only use salesStartDate for distribution if it exists
-    let previousDate: string | null = salesStartDate;
-    let previousTotal = 0;
-    let previousRevenue = 0;
-    let hasBaseline = !!salesStartDate; // We only have a baseline if salesStartDate exists
-    let previousDateIsSalesStart = !!salesStartDate; // Track if previousDate came from salesStartDate vs a report
-
-    for (let i = 0; i < sortedTickets.length; i++) {
-      const ticket = sortedTickets[i];
-      const ticketDate = getEffectiveSalesDate(ticket);
-      if (!ticketDate) continue;
-
-      const delta = ticket.quantity_sold - previousTotal;
-      const revenueDelta = Number(ticket.revenue) - previousRevenue;
-
-      // For the first report without salesStartDate, we can't show anything
-      // (we don't know when sales started, so no baseline to compare against)
-      // But we establish the baseline for subsequent reports
-      if (!hasBaseline) {
-        previousTotal = ticket.quantity_sold;
-        previousRevenue = Number(ticket.revenue);
-        previousDate = ticketDate;
-        hasBaseline = true; // Now we have a baseline for future reports
-        previousDateIsSalesStart = false; // This date came from a report, not salesStartDate
-        continue;
-      }
-
-      // Skip if delta is 0 or negative (no new tickets sold)
-      // But still update tracking variables
-      if (delta <= 0) {
-        previousTotal = ticket.quantity_sold;
-        previousRevenue = Number(ticket.revenue);
-        previousDate = ticketDate;
-        previousDateIsSalesStart = false;
-        continue;
-      }
-
-      // Only distribute if we have a valid previous date that's before the current date
-      const canDistribute = previousDate && previousDate < ticketDate;
-
-      if (!canDistribute) {
-        // No distribution - show actual on effective sales date
-        distributedData.push({
-          date: ticketDate,
-          projectId,
-          tickets: delta,
-          revenue: revenueDelta > 0 ? revenueDelta : 0,
-          isEstimated: false,
-        });
-      } else {
-        // If previousDate came from a report (not salesStartDate), start distribution from day after
-        // because the report date's sales are already accounted for in the cumulative total
-        const distributionStartDate = previousDateIsSalesStart ? previousDate! : addDays(previousDate!, 1);
-        const totalDays = daysBetween(distributionStartDate, ticketDate) + 1;
-
-        if (totalDays <= 1) {
-          distributedData.push({
-            date: ticketDate,
-            projectId,
-            tickets: delta,
-            revenue: revenueDelta > 0 ? revenueDelta : 0,
-            isEstimated: false,
-          });
-        } else {
-          // Distribute linearly across days using distributeValues for proper handling
-          const distributedTickets = distributeValues(delta, totalDays, 'even');
-          const distributedRevenue = distributeValues(revenueDelta > 0 ? revenueDelta : 0, totalDays, 'even');
-
-          for (let j = 0; j < totalDays; j++) {
-            const date = addDays(distributionStartDate, j);
-            distributedData.push({
-              date,
-              projectId,
-              tickets: distributedTickets[j],
-              revenue: distributedRevenue[j],
-              isEstimated: !reportDatesByProject[projectId]?.has(date),
-            });
-          }
-        }
-      }
-
-      previousTotal = ticket.quantity_sold;
-      previousRevenue = Number(ticket.revenue);
-      previousDate = ticketDate;
-      previousDateIsSalesStart = false; // From now on, previousDate is always a report date
+    // Map distributed items to include projectId alias
+    for (const item of distributed) {
+      distributedData.push({
+        date: item.date,
+        projectId: item.entityId,
+        tickets: item.tickets,
+        revenue: item.revenue,
+        isEstimated: item.isEstimated,
+      });
     }
   }
 
