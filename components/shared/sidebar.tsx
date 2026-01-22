@@ -5,19 +5,17 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
-  FolderKanban,
-  MessageSquare,
+  FileText,
   History,
   Settings,
 } from "lucide-react";
 
 const navigation = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Projects", href: "/dashboard/projects", icon: FolderKanban },
+  { name: "Reports", href: "/dashboard/reports", icon: FileText },
 ];
 
 const secondaryNavigation = [
-  { name: "AI Chat", href: "/dashboard/chat", icon: MessageSquare },
   { name: "Samtalehistorikk", href: "/dashboard/chat/history", icon: History },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
