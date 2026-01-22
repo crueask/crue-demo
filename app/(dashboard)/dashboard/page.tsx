@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DashboardChartWrapper } from "@/components/dashboard/dashboard-chart-wrapper";
 import { ProjectGrid } from "@/components/dashboard/project-grid";
-import { distributeValues, addDays, daysBetween } from "@/lib/chart-utils";
+import { distributeTicketReports, getEffectiveSalesDate, type TicketReport } from "@/lib/chart-utils";
 import { MotleyContainer } from "@/components/motley";
 
 interface ProjectWithStats {

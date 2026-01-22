@@ -555,3 +555,209 @@ export function getDistributionLabel(weight: DistributionWeight): string {
   };
   return labels[weight];
 }
+
+// =============================================================================
+// TICKET DISTRIBUTION LOGIC
+// =============================================================================
+
+/**
+ * A single ticket report/snapshot
+ */
+export interface TicketReport {
+  sale_date: string | null;
+  reported_at: string | null;
+  quantity_sold: number;
+  revenue: number;
+}
+
+/**
+ * A distributed ticket data item for a single day
+ */
+export interface DistributedTicketItem {
+  date: string;
+  entityId: string;
+  tickets: number;
+  revenue: number;
+  isEstimated: boolean;
+}
+
+/**
+ * Get the effective sales date from a ticket report.
+ * If sale_date is provided, use it directly.
+ * Otherwise, subtract one day from reported_at (reports are typically for the previous day).
+ */
+export function getEffectiveSalesDate(ticket: TicketReport): string | null {
+  if (ticket.sale_date) return ticket.sale_date;
+  if (ticket.reported_at) {
+    return addDays(ticket.reported_at.split('T')[0], -1);
+  }
+  return null;
+}
+
+/**
+ * Distribute ticket reports for a single show into daily values.
+ * This is the SINGLE SOURCE OF TRUTH for ticket distribution logic.
+ *
+ * @param tickets - Array of ticket reports for a single show
+ * @param entityId - The entity ID to associate with distributed items (project, stop, or show ID)
+ * @param salesStartDate - When sales started for this show (optional)
+ * @param reportDates - Set of dates that have actual reports (for marking estimated vs actual)
+ * @param distributionWeight - How to distribute values across days
+ * @returns Array of distributed ticket items
+ *
+ * Distribution rules:
+ * 1. Single report with salesStartDate < reportDate: Distribute from salesStartDate to reportDate
+ * 2. Single report with salesStartDate >= reportDate: Show full value on reportDate
+ * 3. Single report without salesStartDate: Show 0 (can't determine when sales started)
+ * 4. Multiple reports: Calculate deltas between consecutive reports
+ * 5. Delta <= 0: Record 0-value entry (report received, no new sales)
+ * 6. Distribution across gaps: Distribute delta evenly between report dates
+ */
+export function distributeTicketReports(
+  tickets: TicketReport[],
+  entityId: string,
+  salesStartDate: string | null,
+  reportDates: Set<string>,
+  distributionWeight: DistributionWeight = 'even'
+): DistributedTicketItem[] {
+  if (!tickets || tickets.length === 0) {
+    return [];
+  }
+
+  const distributedData: DistributedTicketItem[] = [];
+
+  // Sort tickets by effective sales date ascending
+  const sortedTickets = [...tickets].sort((a, b) => {
+    const dateA = getEffectiveSalesDate(a) || '';
+    const dateB = getEffectiveSalesDate(b) || '';
+    return dateA.localeCompare(dateB);
+  });
+
+  // Handle single report case
+  if (sortedTickets.length === 1) {
+    const ticket = sortedTickets[0];
+    const ticketDate = getEffectiveSalesDate(ticket);
+    if (!ticketDate) return [];
+
+    if (salesStartDate && salesStartDate < ticketDate) {
+      // Distribute from salesStartDate to ticketDate
+      const totalDays = daysBetween(salesStartDate, ticketDate) + 1;
+      const distributedTickets = distributeValues(ticket.quantity_sold, totalDays, distributionWeight);
+      const distributedRevenue = distributeValues(Number(ticket.revenue), totalDays, distributionWeight);
+
+      for (let i = 0; i < totalDays; i++) {
+        const date = addDays(salesStartDate, i);
+        distributedData.push({
+          date,
+          entityId,
+          tickets: distributedTickets[i],
+          revenue: distributedRevenue[i],
+          isEstimated: !reportDates.has(date),
+        });
+      }
+    } else if (salesStartDate && salesStartDate >= ticketDate) {
+      // Sales started on or after report date - show full value on report date
+      distributedData.push({
+        date: ticketDate,
+        entityId,
+        tickets: ticket.quantity_sold,
+        revenue: Number(ticket.revenue),
+        isEstimated: false,
+      });
+    }
+    // No salesStartDate - skip (can't determine when sales started, shows as 0)
+
+    return distributedData;
+  }
+
+  // Handle multiple reports - distribute deltas between consecutive reports
+  let previousDate: string | null = salesStartDate;
+  let previousTotal = 0;
+  let previousRevenue = 0;
+  let hasBaseline = !!salesStartDate;
+  let previousDateIsSalesStart = !!salesStartDate;
+
+  for (let i = 0; i < sortedTickets.length; i++) {
+    const ticket = sortedTickets[i];
+    const ticketDate = getEffectiveSalesDate(ticket);
+    if (!ticketDate) continue;
+
+    const delta = ticket.quantity_sold - previousTotal;
+    const revenueDelta = Number(ticket.revenue) - previousRevenue;
+
+    // First report without salesStartDate - establish baseline
+    if (!hasBaseline) {
+      previousTotal = ticket.quantity_sold;
+      previousRevenue = Number(ticket.revenue);
+      previousDate = ticketDate;
+      hasBaseline = true;
+      previousDateIsSalesStart = false;
+      continue;
+    }
+
+    if (delta <= 0) {
+      // Record 0-value entry so report shows as received (not missing)
+      distributedData.push({
+        date: ticketDate,
+        entityId,
+        tickets: 0,
+        revenue: 0,
+        isEstimated: false,
+      });
+      previousTotal = ticket.quantity_sold;
+      previousRevenue = Number(ticket.revenue);
+      previousDate = ticketDate;
+      previousDateIsSalesStart = false;
+      continue;
+    }
+
+    const canDistribute = previousDate && previousDate < ticketDate;
+
+    if (!canDistribute) {
+      // No distribution - show delta on report date
+      distributedData.push({
+        date: ticketDate,
+        entityId,
+        tickets: delta,
+        revenue: revenueDelta > 0 ? revenueDelta : 0,
+        isEstimated: false,
+      });
+    } else {
+      // Distribute delta across days between reports
+      // If previousDate came from a report (not salesStartDate), start from day after
+      const distributionStartDate = previousDateIsSalesStart ? previousDate! : addDays(previousDate!, 1);
+      const totalDays = daysBetween(distributionStartDate, ticketDate) + 1;
+
+      if (totalDays <= 1) {
+        distributedData.push({
+          date: ticketDate,
+          entityId,
+          tickets: delta,
+          revenue: revenueDelta > 0 ? revenueDelta : 0,
+          isEstimated: false,
+        });
+      } else {
+        const distributedTickets = distributeValues(delta, totalDays, distributionWeight);
+        const distributedRevenue = distributeValues(revenueDelta > 0 ? revenueDelta : 0, totalDays, distributionWeight);
+
+        for (let j = 0; j < totalDays; j++) {
+          const date = addDays(distributionStartDate, j);
+          distributedData.push({
+            date,
+            entityId,
+            tickets: distributedTickets[j],
+            revenue: distributedRevenue[j],
+            isEstimated: !reportDates.has(date),
+          });
+        }
+      }
+    }
+
+    previousTotal = ticket.quantity_sold;
+    previousRevenue = Number(ticket.revenue);
+    previousDate = ticketDate;
+    previousDateIsSalesStart = false;
+  }
+
+  return distributedData;
+}

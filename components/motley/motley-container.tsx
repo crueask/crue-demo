@@ -21,7 +21,6 @@ interface MotleyContainerProps {
   initialMessages?: Message[]; // Optional: pre-loaded messages
   saveMessages?: boolean; // Optional: default true, set to false to skip persistence
   onConversationIdChange?: (id: string) => void; // Callback when conversationId changes
-  showHeader?: boolean; // Show conversation header with context info
 }
 
 export function MotleyContainer({
@@ -31,7 +30,6 @@ export function MotleyContainer({
   initialMessages,
   saveMessages = true,
   onConversationIdChange,
-  showHeader = false,
 }: MotleyContainerProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages || []);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -299,18 +297,7 @@ export function MotleyContainer({
 
       {/* Messages and input container */}
       {hasMessages && (
-        <div className="relative">
-          {/* Animated pastel glow effect while processing */}
-          {isProcessing && (
-            <div
-              className="absolute -inset-4 rounded-3xl opacity-80 blur-2xl transition-opacity duration-500 pointer-events-none"
-              style={{
-                background: "linear-gradient(135deg, rgba(192, 132, 252, 0.4), rgba(236, 72, 153, 0.35), rgba(96, 165, 250, 0.4))",
-                animation: "motley-glow 3s ease-in-out infinite",
-              }}
-            />
-          )}
-          <div className="relative">
+        <div>
           <MotleyMessages
             messages={messages}
             thinkingSteps={thinkingSteps}
@@ -324,7 +311,6 @@ export function MotleyContainer({
               isProcessing={isProcessing}
               placeholder="Følg opp med et nytt spørsmål..."
             />
-          </div>
           </div>
         </div>
       )}
