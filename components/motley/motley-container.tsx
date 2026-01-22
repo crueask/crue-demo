@@ -83,6 +83,7 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
       let assistantContent = "";
       const charts: ChartConfig[] = [];
       const currentThinkingSteps: ThinkingStep[] = [];
+      let buffer = ""; // Buffer for incomplete SSE lines
 
       // Create assistant message placeholder
       const assistantMessageId = (Date.now() + 1).toString();
@@ -97,13 +98,19 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
+        // Append new chunk to buffer and split by double newline (SSE message separator)
+        buffer += decoder.decode(value, { stream: true });
+        const messages = buffer.split("\n\n");
 
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
+        // Keep the last incomplete message in the buffer
+        buffer = messages.pop() || "";
+
+        for (const message of messages) {
+          const lines = message.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.slice(6));
 
               switch (data.type) {
                 case "text":
@@ -164,9 +171,10 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
             } catch (e) {
               // Skip invalid JSON lines
               if (line.trim() && !line.includes("[DONE]")) {
-                console.warn("Failed to parse SSE data:", e);
+                console.warn("Failed to parse SSE data:", line, e);
               }
             }
+          }
           }
         }
       }
