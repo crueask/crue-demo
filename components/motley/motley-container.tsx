@@ -123,6 +123,20 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
                 ));
                 break;
 
+              case "reasoning": {
+                // Add reasoning as a thinking step with content
+                const reasoningStep: ThinkingStep = {
+                  id: `reasoning-${Date.now()}`,
+                  type: "analysis",
+                  title: "Tenker...",
+                  content: data.content,
+                  status: "complete",
+                };
+                currentThinkingSteps.push(reasoningStep);
+                setThinkingSteps([...currentThinkingSteps]);
+                break;
+              }
+
               case "tool_call": {
                 const step: ThinkingStep = {
                   id: Date.now().toString(),

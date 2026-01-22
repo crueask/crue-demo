@@ -1727,12 +1727,17 @@ export async function POST(req: Request) {
               return;
             }
 
+            // Check if this response includes tool calls (reasoning phase vs final answer)
+            const hasToolUse = response.content.some(b => b.type === "tool_use");
+
             // Process the response
             for (const block of response.content) {
               if (block.type === "text") {
-                // Stream text content
+                // If response includes tool_use, this text is "reasoning" (shown in thinking section)
+                // If no tool_use (final answer), this text is the main "text" response
+                const eventType = hasToolUse ? "reasoning" : "text";
                 controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: "text", content: block.text })}\n\n`)
+                  encoder.encode(`data: ${JSON.stringify({ type: eventType, content: block.text })}\n\n`)
                 );
               } else if (block.type === "tool_use") {
                 // Stream tool use event

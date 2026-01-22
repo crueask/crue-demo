@@ -54,19 +54,24 @@ export function MotleyThinking({ steps, isProcessing }: MotleyThinkingProps) {
       {isExpanded && (
         <div className="mt-2 pl-2 border-l-2 border-gray-100 space-y-2">
           {steps.map((step) => (
-            <div
-              key={step.id}
-              className="flex items-center gap-2 text-xs text-gray-600"
-            >
-              <StepIcon toolName={step.toolName} status={step.status} />
-              <span className={cn(
-                step.status === "running" && "text-purple-600 font-medium",
-                step.status === "complete" && "text-gray-500"
-              )}>
-                {step.title}
-              </span>
-              {step.status === "running" && (
-                <span className="text-purple-400 animate-pulse">...</span>
+            <div key={step.id} className="space-y-1">
+              <div className="flex items-center gap-2 text-xs text-gray-600">
+                <StepIcon toolName={step.toolName} type={step.type} status={step.status} />
+                <span className={cn(
+                  step.status === "running" && "text-purple-600 font-medium",
+                  step.status === "complete" && "text-gray-500"
+                )}>
+                  {step.type === "analysis" ? "Resonerer" : step.title}
+                </span>
+                {step.status === "running" && (
+                  <span className="text-purple-400 animate-pulse">...</span>
+                )}
+              </div>
+              {/* Show reasoning content */}
+              {step.type === "analysis" && step.content && (
+                <div className="ml-6 text-xs text-gray-500 italic">
+                  {step.content}
+                </div>
               )}
             </div>
           ))}
@@ -76,7 +81,7 @@ export function MotleyThinking({ steps, isProcessing }: MotleyThinkingProps) {
   );
 }
 
-function StepIcon({ toolName, status }: { toolName?: string; status: ThinkingStep["status"] }) {
+function StepIcon({ toolName, type, status }: { toolName?: string; type?: ThinkingStep["type"]; status: ThinkingStep["status"] }) {
   const iconClass = cn(
     "w-4 h-4",
     status === "pending" && "text-gray-300",
@@ -86,6 +91,11 @@ function StepIcon({ toolName, status }: { toolName?: string; status: ThinkingSte
 
   if (status === "running") {
     return <Loader2 className={cn(iconClass, "animate-spin")} />;
+  }
+
+  // For completed reasoning/analysis steps, show a different icon
+  if (type === "analysis") {
+    return <Check className={cn(iconClass, "text-blue-500")} />;
   }
 
   if (status === "complete") {
