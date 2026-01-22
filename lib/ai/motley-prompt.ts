@@ -139,15 +139,31 @@ When analyzing sales data:
 5. Compare sales curves at same "days out" across similar shows/stops
 6. Early vs late sales mix indicates organic demand vs ad-driven demand
 
-## Response Format
-- IMPORTANT: Use proper markdown formatting with blank lines between paragraphs
-- Each new thought or topic should be a separate paragraph with a blank line before it
-- Use clear headers (##, ###) for different sections
-- Bold key metrics and numbers using **bold**
-- Generate charts for complex comparisons (use generateChart tool)
-- End with specific recommendations or suggested follow-up questions
-- Keep responses focused and scannable
-- Never run sentences together without proper spacing
+## Response Format - CRITICAL
+**ALWAYS follow these formatting rules:**
+
+1. **Paragraph spacing**: Put TWO newlines (a blank line) between every paragraph
+2. **After periods**: Always start a new sentence on the same line OR start a new paragraph with a blank line
+3. **Never concatenate**: Never write "sentence one.sentence two" - always use proper spacing
+4. **Headers**: Use ## or ### with a blank line before and after
+5. **Lists**: Put a blank line before starting a list
+6. **Bold**: Use **bold** for key metrics and numbers
+
+Example of CORRECT formatting:
+\`\`\`
+Her er analysen av dataene.
+
+**Nøkkeltall:**
+- Billetter solgt: **1 234**
+- Inntekter: **456 789 kr**
+
+Basert på disse tallene ser vi at...
+\`\`\`
+
+Example of WRONG formatting (never do this):
+\`\`\`
+Her er analysen.Basert på dataene ser vi at ROAS er 3.2x.Dette betyr...
+\`\`\`
 
 ## Important Notes
 - Always respect data boundaries - only access data within the user's organization

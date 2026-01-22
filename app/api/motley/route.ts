@@ -290,21 +290,36 @@ async function executeQueryData(
         let periodStartRevenue = 0;
         let periodEndTickets = 0;
         let periodEndRevenue = 0;
+        let showsWithData = 0;
+        let showsWithDeltaData = 0;
 
         for (const reports of Object.values(reportsByShow)) {
-          // Find the report closest to (but before or at) the start of the period
+          if (reports.length === 0) continue;
+          showsWithData++;
+
+          // Find the report closest to (but before) the start of the period - this is our baseline
           const beforePeriod = reports.filter(r => r.reported_at.split("T")[0] < dateRange.start);
           const startReport = beforePeriod.length > 0 ? beforePeriod[beforePeriod.length - 1] : null;
 
-          // Find the report closest to (but before or at) the end of the period
+          // Find the report closest to (but on or before) the end of the period
           const beforeEnd = reports.filter(r => r.reported_at.split("T")[0] <= dateRange.end);
           const endReport = beforeEnd.length > 0 ? beforeEnd[beforeEnd.length - 1] : null;
 
-          if (startReport) {
-            periodStartTickets += startReport.quantity_sold;
-            periodStartRevenue += startReport.revenue;
-          }
+          // Also find reports WITHIN the period to detect if there was activity
+          const duringPeriod = reports.filter(r => {
+            const reportDate = r.reported_at.split("T")[0];
+            return reportDate >= dateRange.start && reportDate <= dateRange.end;
+          });
+
+          // If there's data during or at end of period
           if (endReport) {
+            showsWithDeltaData++;
+            // Use startReport values as baseline, or 0 if no data before period
+            const baselineTickets = startReport?.quantity_sold || 0;
+            const baselineRevenue = startReport?.revenue || 0;
+
+            periodStartTickets += baselineTickets;
+            periodStartRevenue += baselineRevenue;
             periodEndTickets += endReport.quantity_sold;
             periodEndRevenue += endReport.revenue;
           }
@@ -318,7 +333,11 @@ async function executeQueryData(
           periodEndTickets,
           periodStartRevenue,
           periodEndRevenue,
-          note: "Delta calculated by comparing cumulative totals at period start vs end",
+          showsWithData,
+          showsWithDeltaData,
+          note: periodEndTickets === periodStartTickets
+            ? "Ingen nye billettrapporter i denne perioden - delta kan ikke beregnes nøyaktig"
+            : "Delta beregnet ved å sammenligne kumulative totaler ved periodens start og slutt",
         };
       }
 
