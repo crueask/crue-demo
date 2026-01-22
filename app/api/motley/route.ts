@@ -320,41 +320,43 @@ async function executeQueryAdSpend(
 
   let adSpendByDate: Record<string, number> = {};
   let dataSource = "none";
-
-  // Helper to get marketing_spend data directly (fallback when facebook_ads connections don't exist)
-  async function getMarketingSpend(projectIds: string[], stopIds?: string[]): Promise<Record<string, number>> {
-    let query = supabase
-      .from("marketing_spend")
-      .select("date, spend")
-      .in("project_id", projectIds)
-      .gte("date", dateRange.start)
-      .lte("date", dateRange.end);
-
-    if (stopIds?.length) {
-      query = query.in("stop_id", stopIds);
-    }
-
-    const { data } = await query;
-    const result: Record<string, number> = {};
-
-    if (data) {
-      for (const row of data) {
-        result[row.date] = (result[row.date] || 0) + Number(row.spend);
-      }
-    }
-
-    return result;
-  }
+  const diagnostics: Record<string, unknown> = {};
 
   switch (scope) {
     case "organization": {
-      const { data: projects } = await supabase
+      const { data: projects, error: projectsError } = await supabase
         .from("projects")
-        .select("id")
+        .select("id, name")
         .eq("organization_id", organizationId);
 
+      if (projectsError) {
+        diagnostics.projectsError = projectsError.message;
+      }
+
+      diagnostics.projectsFound = projects?.length || 0;
+
       if (projects?.length) {
-        // Try facebook_ads via stop_ad_connections first
+        // Check for stop_ad_connections
+        const { data: stops } = await supabase
+          .from("stops")
+          .select("id")
+          .in("project_id", projects.map((p) => p.id));
+
+        diagnostics.stopsFound = stops?.length || 0;
+
+        if (stops?.length) {
+          const { data: connections, error: connError } = await supabase
+            .from("stop_ad_connections")
+            .select("id, stop_id, campaign")
+            .in("stop_id", stops.map((s) => s.id));
+
+          if (connError) {
+            diagnostics.connectionsError = connError.message;
+          }
+          diagnostics.connectionsFound = connections?.length || 0;
+        }
+
+        // Get ad spend from facebook_ads via stop_ad_connections
         adSpendByDate = await getTotalAdSpend(
           supabase,
           projects.map((p) => p.id),
@@ -362,13 +364,7 @@ async function executeQueryAdSpend(
           dateRange.end
         );
 
-        // If no data from facebook_ads, try marketing_spend table
-        if (Object.keys(adSpendByDate).length === 0) {
-          adSpendByDate = await getMarketingSpend(projects.map((p) => p.id));
-          if (Object.keys(adSpendByDate).length > 0) {
-            dataSource = "marketing_spend";
-          }
-        } else {
+        if (Object.keys(adSpendByDate).length > 0) {
           dataSource = "facebook_ads";
         }
       }
@@ -378,16 +374,36 @@ async function executeQueryAdSpend(
     case "project": {
       if (!projectId) throw new Error("projectId required for project scope");
 
-      // Try facebook_ads via stop_ad_connections first
+      // Get stops for this project and check for connections
+      const { data: stops } = await supabase
+        .from("stops")
+        .select("id, name")
+        .eq("project_id", projectId);
+
+      diagnostics.stopsFound = stops?.length || 0;
+
+      if (stops?.length) {
+        const { data: connections, error: connError } = await supabase
+          .from("stop_ad_connections")
+          .select("id, stop_id, campaign, source")
+          .in("stop_id", stops.map((s) => s.id));
+
+        if (connError) {
+          diagnostics.connectionsError = connError.message;
+        }
+        diagnostics.connectionsFound = connections?.length || 0;
+        if (connections?.length) {
+          diagnostics.sampleConnections = connections.slice(0, 3).map(c => ({
+            campaign: c.campaign,
+            source: c.source
+          }));
+        }
+      }
+
+      // Get ad spend from facebook_ads via stop_ad_connections
       adSpendByDate = await getProjectAdSpend(supabase, projectId, dateRange.start, dateRange.end);
 
-      // If no data from facebook_ads, try marketing_spend table
-      if (Object.keys(adSpendByDate).length === 0) {
-        adSpendByDate = await getMarketingSpend([projectId]);
-        if (Object.keys(adSpendByDate).length > 0) {
-          dataSource = "marketing_spend";
-        }
-      } else {
+      if (Object.keys(adSpendByDate).length > 0) {
         dataSource = "facebook_ads";
       }
       break;
@@ -396,25 +412,21 @@ async function executeQueryAdSpend(
     case "stop": {
       if (!stopId) throw new Error("stopId required for stop scope");
 
-      // Try facebook_ads via stop_ad_connections first
+      // Check for connections on this stop
+      const { data: connections, error: connError } = await supabase
+        .from("stop_ad_connections")
+        .select("id, campaign, source")
+        .eq("stop_id", stopId);
+
+      if (connError) {
+        diagnostics.connectionsError = connError.message;
+      }
+      diagnostics.connectionsFound = connections?.length || 0;
+
+      // Get ad spend from facebook_ads via stop_ad_connections
       adSpendByDate = await getStopAdSpend(supabase, stopId, dateRange.start, dateRange.end);
 
-      // If no data from facebook_ads, try marketing_spend table
-      if (Object.keys(adSpendByDate).length === 0) {
-        // Get project_id for this stop
-        const { data: stopData } = await supabase
-          .from("stops")
-          .select("project_id")
-          .eq("id", stopId)
-          .single();
-
-        if (stopData?.project_id) {
-          adSpendByDate = await getMarketingSpend([stopData.project_id], [stopId]);
-          if (Object.keys(adSpendByDate).length > 0) {
-            dataSource = "marketing_spend";
-          }
-        }
-      } else {
+      if (Object.keys(adSpendByDate).length > 0) {
         dataSource = "facebook_ads";
       }
       break;
@@ -452,13 +464,26 @@ async function executeQueryAdSpend(
     };
   }
 
+  // Build helpful note based on diagnostics
+  let note: string | undefined;
+  if (dataSource === "none") {
+    if (diagnostics.connectionsError) {
+      note = `Kunne ikke lese annonsekoblinger: ${diagnostics.connectionsError}. Sjekk at du har tilgang til å se annonsekostnader.`;
+    } else if (diagnostics.connectionsFound === 0) {
+      note = "Ingen annonsekampanjer er koblet til turnéstoppene. Gå til stoppestedsinnstillingene og koble til annonsekampanjer for å se annonsekostnader og ROAS.";
+    } else {
+      note = "Annonsekoblinger finnes, men ingen data ble funnet i den angitte perioden. Sjekk at facebook_ads-tabellen har data for denne perioden.";
+    }
+  }
+
   return {
     dailySpend: adSpendByDate,
     totalSpend,
     dateRange,
     includeMva,
     dataSource,
-    note: dataSource === "none" ? "Ingen annonsekostnader funnet. Koble til annonsekampanjer i stoppestedsinnstillingene eller legg til data i marketing_spend." : undefined,
+    diagnostics,
+    note,
     ...metrics,
   };
 }
