@@ -123,18 +123,31 @@ export default function ReportsAdminPage() {
         return;
       }
 
-      // Get user's organization
-      const { data: orgMembership } = await supabase
+      // Get user's organization(s)
+      const { data: orgMemberships, error: orgError } = await supabase
         .from("organization_members")
         .select("organization_id")
-        .eq("user_id", user.id)
-        .single();
+        .eq("user_id", user.id);
 
-      if (!orgMembership) {
-        setError("Ingen organisasjonstilgang");
+      console.log("User ID:", user.id);
+      console.log("Org memberships:", orgMemberships);
+      console.log("Org error:", orgError);
+
+      if (orgError) {
+        console.error("Error fetching org membership:", orgError);
+        setError("Kunne ikke hente organisasjonstilgang: " + orgError.message);
         setLoading(false);
         return;
       }
+
+      if (!orgMemberships || orgMemberships.length === 0) {
+        setError("Ingen organisasjonstilgang - bruker er ikke medlem av noen organisasjon");
+        setLoading(false);
+        return;
+      }
+
+      // Use the first organization (or could combine all)
+      const orgMembership = orgMemberships[0];
 
       // Get all projects for the organization
       const { data: orgProjects } = await supabase

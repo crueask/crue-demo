@@ -50,7 +50,8 @@ export function ProjectGrid({ projects }: ProjectGridProps) {
 
     // Not searching - apply the toggle filter
     if (showPastProjects) {
-      return projects;
+      // Show only completed projects (without upcoming shows)
+      return projectsWithoutUpcoming;
     }
 
     // Only show projects with upcoming shows
