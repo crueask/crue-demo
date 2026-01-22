@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { User, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MotleyThinking } from "./motley-thinking";
@@ -30,6 +30,78 @@ interface MotleyMessagesProps {
   messages: Message[];
   thinkingSteps: ThinkingStep[];
   isProcessing: boolean;
+}
+
+// Animated text component that types out content smoothly
+function AnimatedText({ content, isStreaming }: { content: string; isStreaming?: boolean }) {
+  const [displayedContent, setDisplayedContent] = useState("");
+  const [isAnimating, setIsAnimating] = useState(false);
+  const targetContentRef = useRef(content);
+  const animationRef = useRef<number>();
+
+  useEffect(() => {
+    // If content changed, animate from current position to new content
+    if (content !== targetContentRef.current) {
+      targetContentRef.current = content;
+
+      // If we're already showing more than the new content, just update (shouldn't happen normally)
+      if (displayedContent.length > content.length) {
+        setDisplayedContent(content);
+        return;
+      }
+
+      // Animate the new characters
+      setIsAnimating(true);
+      const startIndex = displayedContent.length;
+      const charsToAdd = content.slice(startIndex);
+      let currentIndex = 0;
+
+      const animateChars = () => {
+        if (currentIndex < charsToAdd.length) {
+          // Add characters in small batches for smoother animation
+          const batchSize = Math.min(3, charsToAdd.length - currentIndex);
+          currentIndex += batchSize;
+          setDisplayedContent(content.slice(0, startIndex + currentIndex));
+          animationRef.current = requestAnimationFrame(animateChars);
+        } else {
+          setIsAnimating(false);
+        }
+      };
+
+      animationRef.current = requestAnimationFrame(animateChars);
+    }
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [content, displayedContent]);
+
+  // Reset when content is cleared (new message)
+  useEffect(() => {
+    if (content === "" && displayedContent !== "") {
+      setDisplayedContent("");
+    }
+  }, [content, displayedContent]);
+
+  return (
+    <ReactMarkdown
+      components={{
+        h2: ({ children }) => <h2 className="text-base font-semibold text-gray-900 mt-4 mb-2 first:mt-0">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-sm font-semibold text-gray-900 mt-3 mb-1.5">{children}</h3>,
+        p: ({ children }) => <p className="text-gray-700 mb-2 last:mb-0">{children}</p>,
+        strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+        ul: ({ children }) => <ul className="list-disc list-inside space-y-1 mb-2 text-gray-700 ml-2">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 mb-2 text-gray-700 ml-2">{children}</ol>,
+        li: ({ children }) => <li className="text-gray-700">{children}</li>,
+        code: ({ children }) => <code className="bg-gray-200 px-1.5 py-0.5 rounded text-xs font-mono text-gray-800">{children}</code>,
+        pre: ({ children }) => <pre className="bg-gray-200 p-3 rounded-lg overflow-x-auto text-xs mb-2">{children}</pre>,
+      }}
+    >
+      {displayedContent || content}
+    </ReactMarkdown>
+  );
 }
 
 export function MotleyMessages({ messages, thinkingSteps, isProcessing }: MotleyMessagesProps) {
@@ -91,34 +163,33 @@ export function MotleyMessages({ messages, thinkingSteps, isProcessing }: Motley
                 <div className="rounded-2xl px-4 py-3 bg-gray-50 text-gray-900">
                   <div className="text-sm leading-relaxed space-y-3">
                     {/* Show thinking steps inline at the top of assistant response */}
-                    {getStepsForMessage(message, index).length > 0 && (
-                      <MotleyThinking
-                        steps={getStepsForMessage(message, index)}
-                        isProcessing={isProcessing && message.isStreaming && index === messages.length - 1}
+                    {(() => {
+                      const steps = getStepsForMessage(message, index);
+                      const isLastMessage = index === messages.length - 1;
+                      const showThinking = steps.length > 0 || (isLastMessage && isProcessing && thinkingSteps.length > 0);
+
+                      if (showThinking) {
+                        const stepsToShow = isLastMessage && thinkingSteps.length > 0 ? thinkingSteps : steps;
+                        return (
+                          <MotleyThinking
+                            steps={stepsToShow}
+                            isProcessing={isProcessing && isLastMessage}
+                          />
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Message content with typing animation */}
+                    {message.content && (
+                      <AnimatedText
+                        content={message.content}
+                        isStreaming={message.isStreaming}
                       />
                     )}
 
-                    {/* Message content */}
-                    {message.content && (
-                      <ReactMarkdown
-                        components={{
-                          h2: ({ children }) => <h2 className="text-base font-semibold text-gray-900 mt-4 mb-2 first:mt-0">{children}</h2>,
-                          h3: ({ children }) => <h3 className="text-sm font-semibold text-gray-900 mt-3 mb-1.5">{children}</h3>,
-                          p: ({ children }) => <p className="text-gray-700 mb-2 last:mb-0">{children}</p>,
-                          strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
-                          ul: ({ children }) => <ul className="list-disc list-inside space-y-1 mb-2 text-gray-700 ml-2">{children}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 mb-2 text-gray-700 ml-2">{children}</ol>,
-                          li: ({ children }) => <li className="text-gray-700">{children}</li>,
-                          code: ({ children }) => <code className="bg-gray-200 px-1.5 py-0.5 rounded text-xs font-mono text-gray-800">{children}</code>,
-                          pre: ({ children }) => <pre className="bg-gray-200 p-3 rounded-lg overflow-x-auto text-xs mb-2">{children}</pre>,
-                        }}
-                      >
-                        {message.content}
-                      </ReactMarkdown>
-                    )}
-
-                    {/* Streaming indicator when no content yet */}
-                    {message.isStreaming && !message.content && getStepsForMessage(message, index).length === 0 && (
+                    {/* Streaming indicator when no content yet and no thinking steps */}
+                    {message.isStreaming && !message.content && thinkingSteps.length === 0 && (
                       <div className="flex items-center gap-1">
                         <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
                         <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
