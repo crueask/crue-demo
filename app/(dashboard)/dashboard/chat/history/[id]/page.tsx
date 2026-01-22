@@ -34,8 +34,8 @@ export default function ConversationDetailPage() {
     id: msg.id,
     role: msg.role as "user" | "assistant",
     content: msg.content,
-    charts: msg.charts as Message["charts"],
-    thinkingSteps: msg.thinking_steps as Message["thinkingSteps"],
+    charts: msg.charts as unknown as Message["charts"],
+    thinkingSteps: msg.thinking_steps as unknown as Message["thinkingSteps"],
   }));
 
   const context: MotleyContext | null = conversation?.context
