@@ -286,36 +286,7 @@
   }
 }
 
-/* Text materializing animation - blur to sharp */
-@keyframes textMaterialize {
-  0% {
-    opacity: 0.6;
-    filter: blur(2px);
-    transform: translateY(1px);
-  }
-  100% {
-    opacity: 1;
-    filter: blur(0);
-    transform: translateY(0);
-  }
-}
-
-/* Apply materialize effect to last elements while streaming */
-.motley-streaming p:last-of-type,
-.motley-streaming li:last-of-type,
-.motley-streaming h2:last-of-type,
-.motley-streaming h3:last-of-type,
-.motley-streaming strong:last-of-type {
-  animation: textMaterialize 0.15s ease-out;
-}
-
-/* Ensure smooth text rendering during streaming animation */
+/* Ensure smooth text rendering during streaming */
 .motley-streaming {
   -webkit-font-smoothing: antialiased;
-}
-
-/* GPU acceleration hint only during active streaming */
-.motley-streaming p:last-of-type,
-.motley-streaming li:last-of-type {
-  will-change: opacity, filter, transform;
 }
