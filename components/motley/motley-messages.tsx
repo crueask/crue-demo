@@ -145,7 +145,7 @@ export function MotleyMessages({ messages, thinkingSteps, isProcessing }: Motley
   return (
     <div
       ref={scrollRef}
-      className="max-h-[500px] overflow-y-auto"
+      className="overflow-y-auto"
     >
       <div className="p-4 space-y-4">
         {messages.map((message, index) => (

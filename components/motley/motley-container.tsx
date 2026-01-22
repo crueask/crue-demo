@@ -300,17 +300,17 @@ export function MotleyContainer({
       {/* Messages and input container */}
       {hasMessages && (
         <div className="relative">
-          {/* Subtle glow effect while processing */}
+          {/* Animated pastel glow effect while processing */}
           {isProcessing && (
             <div
-              className="absolute -inset-2 rounded-2xl opacity-60 blur-xl transition-opacity duration-500"
+              className="absolute -inset-4 rounded-3xl opacity-80 blur-2xl transition-opacity duration-500 pointer-events-none"
               style={{
-                background: "linear-gradient(135deg, rgba(192, 132, 252, 0.15), rgba(236, 72, 153, 0.15), rgba(96, 165, 250, 0.15))",
-                animation: "pulse 2s ease-in-out infinite",
+                background: "linear-gradient(135deg, rgba(192, 132, 252, 0.4), rgba(236, 72, 153, 0.35), rgba(96, 165, 250, 0.4))",
+                animation: "motley-glow 3s ease-in-out infinite",
               }}
             />
           )}
-          <div className="relative bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="relative">
           <MotleyMessages
             messages={messages}
             thinkingSteps={thinkingSteps}
@@ -318,7 +318,7 @@ export function MotleyContainer({
           />
 
           {/* Search Bar at bottom when conversation is active */}
-          <div className="border-t border-gray-100 p-3">
+          <div className="pt-4">
             <MotleySearchBar
               onSubmit={handleSubmit}
               isProcessing={isProcessing}

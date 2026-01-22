@@ -234,3 +234,17 @@
   will-change: opacity, filter, transform;
 }
 
+/* Motley glow animation for processing state */
+@keyframes motley-glow {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+    filter: blur(24px);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.02);
+    filter: blur(32px);
+  }
+}
+

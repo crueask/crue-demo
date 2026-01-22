@@ -198,75 +198,69 @@ export default function SharedChatPage() {
   }));
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b">
-        <div className="container max-w-4xl py-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-xl font-semibold flex items-center gap-2">
-                <MessageSquare className="h-5 w-5" />
-                {conversation.title || "Delt samtale"}
-              </h1>
-              <div className="flex items-center gap-3 mt-2 flex-wrap">
-                {context && (
-                  <MotleyContextBadge
-                    context={context}
-                    projectName={conversation.project?.name}
-                    size="sm"
-                    asLink={false}
-                  />
-                )}
-                <span className="text-sm text-muted-foreground flex items-center gap-1">
-                  <Calendar className="h-3.5 w-3.5" />
-                  {formatDistanceToNow(new Date(conversation.created_at), {
-                    addSuffix: true,
-                    locale: nb,
-                  })}
-                </span>
-                {creator && (
-                  <span className="text-sm text-muted-foreground flex items-center gap-1">
-                    <User className="h-3.5 w-3.5" />
-                    {creator.displayName || creator.email}
-                  </span>
-                )}
-                <span className="text-sm text-muted-foreground flex items-center gap-1">
-                  <Eye className="h-3.5 w-3.5" />
-                  {share.viewCount} visninger
-                </span>
-              </div>
-            </div>
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+      {/* Centered content wrapper */}
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <header className="pt-12 pb-8 text-center">
+          <h1 className="text-2xl font-semibold text-gray-900 mb-3">
+            {conversation.title || "Delt samtale"}
+          </h1>
+          <div className="flex items-center justify-center gap-4 flex-wrap text-sm text-muted-foreground">
+            {context && (
+              <MotleyContextBadge
+                context={context}
+                projectName={conversation.project?.name}
+                size="sm"
+                asLink={false}
+              />
+            )}
+            <span className="flex items-center gap-1.5">
+              <Calendar className="h-4 w-4" />
+              {formatDistanceToNow(new Date(conversation.created_at), {
+                addSuffix: true,
+                locale: nb,
+              })}
+            </span>
+            {creator && (
+              <span className="flex items-center gap-1.5">
+                <User className="h-4 w-4" />
+                {creator.displayName || creator.email}
+              </span>
+            )}
+            <span className="flex items-center gap-1.5">
+              <Eye className="h-4 w-4" />
+              {share.viewCount} visninger
+            </span>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Chat Content */}
-      <main className="container max-w-4xl py-6">
-        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+        {/* Chat Content */}
+        <main className="pb-12">
           <MotleyMessages
             messages={uiMessages}
             thinkingSteps={[]}
             isProcessing={false}
           />
-        </div>
 
-        {/* Footer */}
-        <div className="mt-4 text-center text-sm text-muted-foreground">
-          <p>
-            Denne samtalen ble delt via{" "}
-            <span className="font-medium">Crue</span>
-          </p>
-          {share.expiresAt && (
-            <p className="mt-1">
-              Lenken utløper{" "}
-              {formatDistanceToNow(new Date(share.expiresAt), {
-                addSuffix: true,
-                locale: nb,
-              })}
+          {/* Footer */}
+          <div className="mt-12 pt-6 border-t border-gray-100 text-center text-sm text-muted-foreground">
+            <p>
+              Denne samtalen ble delt via{" "}
+              <span className="font-medium text-gray-700">Crue</span>
             </p>
-          )}
-        </div>
-      </main>
+            {share.expiresAt && (
+              <p className="mt-1">
+                Lenken utløper{" "}
+                {formatDistanceToNow(new Date(share.expiresAt), {
+                  addSuffix: true,
+                  locale: nb,
+                })}
+              </p>
+            )}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
