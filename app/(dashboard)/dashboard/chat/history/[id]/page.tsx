@@ -39,7 +39,7 @@ export default function ConversationDetailPage() {
   }));
 
   const context: MotleyContext | null = conversation?.context
-    ? (conversation.context as MotleyContext)
+    ? (conversation.context as unknown as MotleyContext)
     : null;
 
   const handleArchive = async () => {

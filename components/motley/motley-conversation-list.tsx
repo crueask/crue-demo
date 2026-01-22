@@ -100,7 +100,7 @@ export function MotleyConversationList({
     <>
       <div className="divide-y divide-border">
         {conversations.map((conversation) => {
-          const context = conversation.context as MotleyContext | null;
+          const context = conversation.context as unknown as MotleyContext | null;
           const title =
             conversation.title ||
             (context?.projectName
