@@ -123,143 +123,89 @@ export default function ReportsAdminPage() {
         return;
       }
 
-      // Get user's accessible project IDs
-      // 1. From organization membership
+      // Get user's organization
       const { data: orgMembership } = await supabase
         .from("organization_members")
         .select("organization_id")
         .eq("user_id", user.id)
         .single();
 
-      let accessibleProjectIds: string[] = [];
-
-      if (orgMembership) {
-        const { data: orgProjects } = await supabase
-          .from("projects")
-          .select("id")
-          .eq("organization_id", orgMembership.organization_id);
-        accessibleProjectIds = orgProjects?.map(p => p.id) || [];
+      if (!orgMembership) {
+        setError("Ingen organisasjonstilgang");
+        setLoading(false);
+        return;
       }
 
-      // 2. From direct project membership
-      const { data: projectMemberships } = await supabase
-        .from("project_members")
-        .select("project_id")
-        .eq("user_id", user.id);
+      // Get all projects for the organization
+      const { data: orgProjects } = await supabase
+        .from("projects")
+        .select("id, name")
+        .eq("organization_id", orgMembership.organization_id);
 
-      const directProjectIds = projectMemberships?.map(pm => pm.project_id) || [];
-      accessibleProjectIds = [...new Set([...accessibleProjectIds, ...directProjectIds])];
-
-      if (accessibleProjectIds.length === 0) {
+      if (!orgProjects || orgProjects.length === 0) {
         setReports([]);
         setProjects([]);
         setLoading(false);
         return;
       }
 
-      // First get stops for accessible projects
-      const { data: accessibleStops } = await supabase
+      const projectIds = orgProjects.map(p => p.id);
+
+      // Get all stops for these projects
+      const { data: stopsData } = await supabase
         .from("stops")
-        .select("id")
-        .in("project_id", accessibleProjectIds);
+        .select("id, name, venue, city, project_id")
+        .in("project_id", projectIds);
 
-      const accessibleStopIds = accessibleStops?.map(s => s.id) || [];
-
-      if (accessibleStopIds.length === 0) {
+      if (!stopsData || stopsData.length === 0) {
         setReports([]);
-        setProjects([]);
+        setProjects(orgProjects);
         setLoading(false);
         return;
       }
 
-      // Get shows for accessible stops
-      const { data: accessibleShows } = await supabase
+      const stopIds = stopsData.map(s => s.id);
+
+      // Get all shows for these stops
+      const { data: showsData } = await supabase
         .from("shows")
-        .select("id")
-        .in("stop_id", accessibleStopIds);
+        .select("id, name, date, time, stop_id")
+        .in("stop_id", stopIds);
 
-      const accessibleShowIds = accessibleShows?.map(s => s.id) || [];
-
-      if (accessibleShowIds.length === 0) {
+      if (!showsData || showsData.length === 0) {
         setReports([]);
-        setProjects([]);
+        setProjects(orgProjects);
         setLoading(false);
         return;
       }
 
-      // Get tickets only for accessible shows
+      const showIds = showsData.map(s => s.id);
+
+      // Get all tickets for these shows
       const { data: ticketsData, error: ticketsError } = await supabase
         .from("tickets")
         .select("*")
-        .in("show_id", accessibleShowIds)
+        .in("show_id", showIds)
         .order("reported_at", { ascending: false });
 
       if (ticketsError) {
         console.error("Error fetching tickets:", ticketsError);
-        setError("Kunne ikke hente rapporter");
+        setError("Kunne ikke hente rapporter: " + ticketsError.message);
         setLoading(false);
         return;
       }
 
       if (!ticketsData || ticketsData.length === 0) {
         setReports([]);
-        setProjects([]);
-        setLoading(false);
-        return;
-      }
-
-      // Get unique show IDs
-      const showIds = [...new Set(ticketsData.map(t => t.show_id))];
-
-      // Fetch shows with their stops
-      const { data: showsData, error: showsError } = await supabase
-        .from("shows")
-        .select("id, name, date, time, stop_id")
-        .in("id", showIds);
-
-      if (showsError) {
-        console.error("Error fetching shows:", showsError);
-        setError("Kunne ikke hente show-data");
-        setLoading(false);
-        return;
-      }
-
-      // Get unique stop IDs
-      const stopIds = [...new Set(showsData?.map(s => s.stop_id) || [])];
-
-      // Fetch stops with their projects
-      const { data: stopsData, error: stopsError } = await supabase
-        .from("stops")
-        .select("id, name, venue, city, project_id")
-        .in("id", stopIds);
-
-      if (stopsError) {
-        console.error("Error fetching stops:", stopsError);
-        setError("Kunne ikke hente stopp-data");
-        setLoading(false);
-        return;
-      }
-
-      // Get unique project IDs
-      const projectIds = [...new Set(stopsData?.map(s => s.project_id) || [])];
-
-      // Fetch projects
-      const { data: projectsData, error: projectsError } = await supabase
-        .from("projects")
-        .select("id, name")
-        .in("id", projectIds);
-
-      if (projectsError) {
-        console.error("Error fetching projects:", projectsError);
-        setError("Kunne ikke hente prosjekt-data");
+        setProjects(orgProjects);
         setLoading(false);
         return;
       }
 
       // Create lookup maps
-      const showsMap = new Map(showsData?.map(s => [s.id, s]) || []);
-      const stopsMap = new Map(stopsData?.map(s => [s.id, s]) || []);
-      const projectsMap = new Map(projectsData?.map(p => [p.id, p]) || []);
+      const showsMap = new Map(showsData.map(s => [s.id, s]));
+      const stopsMap = new Map(stopsData.map(s => [s.id, s]));
+      const projectsMap = new Map(orgProjects.map(p => [p.id, p]));
 
       // Build the reports with hierarchy
       const reportsWithHierarchy: TicketReport[] = [];
@@ -305,9 +251,7 @@ export default function ReportsAdminPage() {
       setReports(reportsWithHierarchy);
 
       // Set unique projects for filter dropdown
-      setProjects(
-        Array.from(projectsMap.values()).sort((a, b) => a.name.localeCompare(b.name))
-      );
+      setProjects(orgProjects.sort((a, b) => a.name.localeCompare(b.name)));
 
     } catch (err) {
       console.error("Unexpected error:", err);
