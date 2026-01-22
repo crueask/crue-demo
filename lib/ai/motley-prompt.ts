@@ -181,7 +181,12 @@ export interface MotleyContext {
 }
 
 export function getContextPrompt(context: MotleyContext): string {
+  // Get today's date in Norwegian timezone
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Oslo' }); // YYYY-MM-DD format
+
   let prompt = `\n\n## Current Context\n`;
+  prompt += `- Today's date: ${today}\n`;
+  prompt += `- When user says "last X days", calculate from today (${today})\n`;
   prompt += `- Organization ID: ${context.organizationId}\n`;
 
   if (context.organizationName) {
