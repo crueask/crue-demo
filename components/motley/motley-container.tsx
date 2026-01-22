@@ -127,12 +127,16 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
                   setThinkingSteps([...currentThinkingSteps]);
                   break;
 
-                case "chart":
-                  // Mark last thinking step as complete
-                  if (currentThinkingSteps.length > 0) {
-                    currentThinkingSteps[currentThinkingSteps.length - 1].status = "complete";
+                case "tool_complete":
+                  // Mark the last running step as complete
+                  const runningStep = currentThinkingSteps.find(s => s.status === "running");
+                  if (runningStep) {
+                    runningStep.status = "complete";
                     setThinkingSteps([...currentThinkingSteps]);
                   }
+                  break;
+
+                case "chart":
                   charts.push(data.config as ChartConfig);
                   setMessages(prev => prev.map(m =>
                     m.id === assistantMessageId

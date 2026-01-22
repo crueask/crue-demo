@@ -69,7 +69,7 @@ export async function GET(
     // Check if user has access to this project
     const { data: project } = await supabase
       .from("projects")
-      .select("id, name, organization_id")
+      .select("id, name, organization_id, organizations(id, name)")
       .eq("id", projectId)
       .single();
 
@@ -153,6 +153,7 @@ export async function GET(
       organizationMembers: orgMembers || [],
       pendingInvitations: invitations,
       canManage,
+      organization: project.organizations,
     });
   } catch (error) {
     console.error("Error in GET /api/projects/[id]/members:", error);
@@ -270,11 +271,26 @@ export async function POST(
         );
       }
 
+      // Get project name for email notification
+      const { data: project } = await supabase
+        .from("projects")
+        .select("name")
+        .eq("id", projectId)
+        .single();
+
       return NextResponse.json({
         success: true,
         member,
         memberCreated: true,
         message: "User added to project",
+        // Include email data so the client can send a notification email
+        emailData: {
+          to: email,
+          projectName: project?.name,
+          role,
+          inviterEmail: user?.email,
+          isExistingUser: true,
+        },
       });
     }
 

@@ -34,6 +34,7 @@ import {
   Mail,
   Clock,
   RotateCw,
+  Building2,
 } from "lucide-react";
 
 interface ShareDialogProps {
@@ -72,6 +73,11 @@ interface OrganizationMember {
   } | null;
 }
 
+interface Organization {
+  id: string;
+  name: string;
+}
+
 export function ShareDialog({ projectId, projectName, open, onOpenChange }: ShareDialogProps) {
   // Public link sharing state
   const [shareSlug, setShareSlug] = useState<string | null>(null);
@@ -97,6 +103,7 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
   const [pendingInvitations, setPendingInvitations] = useState<PendingInvitation[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [membersLoading, setMembersLoading] = useState(true);
+  const [organization, setOrganization] = useState<Organization | null>(null);
 
   const loadShareStatus = useCallback(async () => {
     setLoading(true);
@@ -127,6 +134,7 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
         setOrgMembers(data.organizationMembers || []);
         setPendingInvitations(data.pendingInvitations || []);
         setCanManage(data.canManage || false);
+        setOrganization(data.organization || null);
       }
     } catch (error) {
       console.error("Failed to load members:", error);
@@ -248,21 +256,22 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
         return;
       }
 
-      if (data.memberCreated) {
-        setInviteSuccess(`${inviteEmail} har fått tilgang til prosjektet`);
-      } else {
-        // Send invitation email
-        if (data.emailData) {
-          try {
-            await fetch("/api/send-invitation-email", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(data.emailData),
-            });
-          } catch (emailError) {
-            console.error("Failed to send invitation email:", emailError);
-          }
+      // Send email notification (for both new and existing users)
+      if (data.emailData) {
+        try {
+          await fetch("/api/send-invitation-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data.emailData),
+          });
+        } catch (emailError) {
+          console.error("Failed to send invitation email:", emailError);
         }
+      }
+
+      if (data.memberCreated) {
+        setInviteSuccess(`${inviteEmail} har fått tilgang og er varslet på e-post`);
+      } else {
         setInviteSuccess(`Invitasjon sendt til ${inviteEmail}`);
       }
 
@@ -435,10 +444,28 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
               <div className="py-4 text-center text-gray-500">Laster...</div>
             ) : (
               <div className="space-y-4">
+                {/* Organization with access */}
+                {organization && (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-gray-500">Organisasjon med tilgang</Label>
+                    <div className="border rounded-lg">
+                      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50">
+                        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                          <Building2 className="h-4 w-4 text-indigo-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">{organization.name}</p>
+                          <p className="text-xs text-gray-500">Alle medlemmer har automatisk tilgang</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Organization Members */}
                 {orgMembers.length > 0 && (
                   <div className="space-y-2">
-                    <Label className="text-xs text-gray-500">Organisasjonsmedlemmer (automatisk tilgang)</Label>
+                    <Label className="text-xs text-gray-500">Organisasjonsmedlemmer ({orgMembers.length})</Label>
                     <div className="border rounded-lg divide-y">
                       {orgMembers.map((member) => (
                         <div key={member.id} className="flex items-center justify-between px-3 py-2">

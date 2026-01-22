@@ -1378,6 +1378,16 @@ export async function POST(req: Request) {
                     block.input as Record<string, unknown>
                   );
 
+                  // Send tool_complete event so frontend can mark step as complete
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({
+                        type: "tool_complete",
+                        toolName: block.name,
+                      })}\n\n`
+                    )
+                  );
+
                   // Stream tool result (for charts, send special event)
                   if (block.name === "generateChart") {
                     controller.enqueue(
