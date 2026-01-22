@@ -32,26 +32,28 @@ interface MotleyMessagesProps {
   isProcessing: boolean;
 }
 
-// Markdown renderer with optional animation
-// For simplicity and reliability, we render the full content immediately
-// The "typing" effect comes from the streaming nature of the API response
-function AnimatedText({ content }: { content: string; isStreaming?: boolean }) {
+// Markdown renderer with streaming animation
+// Uses CSS blur/fade effect for a polished "materializing" text appearance
+function AnimatedText({ content, isStreaming }: { content: string; isStreaming?: boolean }) {
   return (
-    <ReactMarkdown
-      components={{
-        h2: ({ children }) => <h2 className="text-base font-semibold text-gray-900 mt-4 mb-2 first:mt-0">{children}</h2>,
-        h3: ({ children }) => <h3 className="text-sm font-semibold text-gray-900 mt-3 mb-1.5">{children}</h3>,
-        p: ({ children }) => <p className="text-gray-700 mb-2 last:mb-0">{children}</p>,
-        strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
-        ul: ({ children }) => <ul className="list-disc list-inside space-y-1 mb-2 text-gray-700 ml-2">{children}</ul>,
-        ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 mb-2 text-gray-700 ml-2">{children}</ol>,
-        li: ({ children }) => <li className="text-gray-700">{children}</li>,
-        code: ({ children }) => <code className="bg-gray-200 px-1.5 py-0.5 rounded text-xs font-mono text-gray-800">{children}</code>,
-        pre: ({ children }) => <pre className="bg-gray-200 p-3 rounded-lg overflow-x-auto text-xs mb-2">{children}</pre>,
-      }}
-    >
-      {content}
-    </ReactMarkdown>
+    <div className={cn("motley-content", isStreaming && "motley-streaming")}>
+      <ReactMarkdown
+        components={{
+          h2: ({ children }) => <h2 className="text-base font-semibold text-gray-900 mt-4 mb-2 first:mt-0">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-sm font-semibold text-gray-900 mt-3 mb-1.5">{children}</h3>,
+          p: ({ children }) => <p className="text-gray-700 mb-2 last:mb-0">{children}</p>,
+          strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+          ul: ({ children }) => <ul className="list-disc list-inside space-y-1 mb-2 text-gray-700 ml-2">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 mb-2 text-gray-700 ml-2">{children}</ol>,
+          li: ({ children }) => <li className="text-gray-700">{children}</li>,
+          code: ({ children }) => <code className="bg-gray-200 px-1.5 py-0.5 rounded text-xs font-mono text-gray-800">{children}</code>,
+          pre: ({ children }) => <pre className="bg-gray-200 p-3 rounded-lg overflow-x-auto text-xs mb-2">{children}</pre>,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+      {isStreaming && <span className="motley-cursor" />}
+    </div>
   );
 }
 
