@@ -100,13 +100,13 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
 
         // Append new chunk to buffer and split by double newline (SSE message separator)
         buffer += decoder.decode(value, { stream: true });
-        const messages = buffer.split("\n\n");
+        const sseMessages = buffer.split("\n\n");
 
         // Keep the last incomplete message in the buffer
-        buffer = messages.pop() || "";
+        buffer = sseMessages.pop() || "";
 
-        for (const message of messages) {
-          const lines = message.split("\n");
+        for (const sseMessage of sseMessages) {
+          const lines = sseMessage.split("\n");
           for (const line of lines) {
             if (line.startsWith("data: ")) {
               try {
