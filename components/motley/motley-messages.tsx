@@ -37,7 +37,7 @@ function AnimatedText({ content, isStreaming }: { content: string; isStreaming?:
   const [displayedContent, setDisplayedContent] = useState("");
   const [isAnimating, setIsAnimating] = useState(false);
   const targetContentRef = useRef(content);
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | null>(null);
 
   useEffect(() => {
     // If content changed, animate from current position to new content
