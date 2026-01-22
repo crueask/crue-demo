@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect } from "react";
 import { User, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MotleyThinking } from "./motley-thinking";
@@ -32,59 +32,10 @@ interface MotleyMessagesProps {
   isProcessing: boolean;
 }
 
-// Animated text component that types out content smoothly
-function AnimatedText({ content, isStreaming }: { content: string; isStreaming?: boolean }) {
-  const [displayedContent, setDisplayedContent] = useState("");
-  const [isAnimating, setIsAnimating] = useState(false);
-  const targetContentRef = useRef(content);
-  const animationRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    // If content changed, animate from current position to new content
-    if (content !== targetContentRef.current) {
-      targetContentRef.current = content;
-
-      // If we're already showing more than the new content, just update (shouldn't happen normally)
-      if (displayedContent.length > content.length) {
-        setDisplayedContent(content);
-        return;
-      }
-
-      // Animate the new characters
-      setIsAnimating(true);
-      const startIndex = displayedContent.length;
-      const charsToAdd = content.slice(startIndex);
-      let currentIndex = 0;
-
-      const animateChars = () => {
-        if (currentIndex < charsToAdd.length) {
-          // Add characters in small batches for smoother animation
-          const batchSize = Math.min(3, charsToAdd.length - currentIndex);
-          currentIndex += batchSize;
-          setDisplayedContent(content.slice(0, startIndex + currentIndex));
-          animationRef.current = requestAnimationFrame(animateChars);
-        } else {
-          setIsAnimating(false);
-        }
-      };
-
-      animationRef.current = requestAnimationFrame(animateChars);
-    }
-
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, [content, displayedContent]);
-
-  // Reset when content is cleared (new message)
-  useEffect(() => {
-    if (content === "" && displayedContent !== "") {
-      setDisplayedContent("");
-    }
-  }, [content, displayedContent]);
-
+// Markdown renderer with optional animation
+// For simplicity and reliability, we render the full content immediately
+// The "typing" effect comes from the streaming nature of the API response
+function AnimatedText({ content }: { content: string; isStreaming?: boolean }) {
   return (
     <ReactMarkdown
       components={{
@@ -99,7 +50,7 @@ function AnimatedText({ content, isStreaming }: { content: string; isStreaming?:
         pre: ({ children }) => <pre className="bg-gray-200 p-3 rounded-lg overflow-x-auto text-xs mb-2">{children}</pre>,
       }}
     >
-      {displayedContent || content}
+      {content}
     </ReactMarkdown>
   );
 }

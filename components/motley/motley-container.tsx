@@ -83,7 +83,7 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
       let assistantContent = "";
       const charts: ChartConfig[] = [];
       const currentThinkingSteps: ThinkingStep[] = [];
-      let buffer = ""; // Buffer for incomplete SSE lines
+      let lineBuffer = ""; // Buffer for incomplete lines
 
       // Create assistant message placeholder
       const assistantMessageId = (Date.now() + 1).toString();
@@ -98,84 +98,102 @@ export function MotleyContainer({ context, stops }: MotleyContainerProps) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        // Append new chunk to buffer and split by double newline (SSE message separator)
-        buffer += decoder.decode(value, { stream: true });
-        const sseMessages = buffer.split("\n\n");
+        // Decode chunk and add to buffer
+        lineBuffer += decoder.decode(value, { stream: true });
 
-        // Keep the last incomplete message in the buffer
-        buffer = sseMessages.pop() || "";
+        // Process complete lines (SSE uses \n\n as message separator)
+        const parts = lineBuffer.split("\n");
 
-        for (const sseMessage of sseMessages) {
-          const lines = sseMessage.split("\n");
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const data = JSON.parse(line.slice(6));
+        // Keep the last part in buffer (might be incomplete)
+        lineBuffer = parts.pop() || "";
 
-              switch (data.type) {
-                case "text":
-                  assistantContent += data.content;
-                  setMessages(prev => prev.map(m =>
-                    m.id === assistantMessageId
-                      ? { ...m, content: assistantContent }
-                      : m
-                  ));
-                  break;
+        for (const line of parts) {
+          if (!line.startsWith("data: ")) continue;
 
-                case "tool_call":
-                  const step: ThinkingStep = {
-                    id: Date.now().toString(),
-                    type: "tool_call",
-                    title: getToolDisplayName(data.toolName),
-                    toolName: data.toolName,
-                    status: "running",
-                  };
-                  currentThinkingSteps.push(step);
-                  setThinkingSteps([...currentThinkingSteps]);
-                  break;
+          try {
+            const data = JSON.parse(line.slice(6));
 
-                case "tool_complete":
-                  // Mark the last running step as complete
-                  const runningStep = currentThinkingSteps.find(s => s.status === "running");
-                  if (runningStep) {
-                    runningStep.status = "complete";
-                    setThinkingSteps([...currentThinkingSteps]);
-                  }
-                  break;
+            switch (data.type) {
+              case "text":
+                assistantContent += data.content;
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantMessageId
+                    ? { ...m, content: assistantContent }
+                    : m
+                ));
+                break;
 
-                case "chart":
-                  charts.push(data.config as ChartConfig);
-                  setMessages(prev => prev.map(m =>
-                    m.id === assistantMessageId
-                      ? { ...m, charts: [...charts] }
-                      : m
-                  ));
-                  break;
-
-                case "done":
-                  // Mark all steps complete
-                  currentThinkingSteps.forEach(s => s.status = "complete");
-                  setThinkingSteps([...currentThinkingSteps]);
-
-                  // Mark streaming complete
-                  setMessages(prev => prev.map(m =>
-                    m.id === assistantMessageId
-                      ? { ...m, isStreaming: false, thinkingSteps: currentThinkingSteps }
-                      : m
-                  ));
-                  break;
-
-                case "error":
-                  throw new Error(data.message);
+              case "tool_call": {
+                const step: ThinkingStep = {
+                  id: Date.now().toString(),
+                  type: "tool_call",
+                  title: getToolDisplayName(data.toolName),
+                  toolName: data.toolName,
+                  status: "running",
+                };
+                currentThinkingSteps.push(step);
+                setThinkingSteps([...currentThinkingSteps]);
+                break;
               }
-            } catch (e) {
-              // Skip invalid JSON lines
-              if (line.trim() && !line.includes("[DONE]")) {
-                console.warn("Failed to parse SSE data:", line, e);
+
+              case "tool_complete": {
+                // Mark the last running step as complete
+                const runningStep = currentThinkingSteps.find(s => s.status === "running");
+                if (runningStep) {
+                  runningStep.status = "complete";
+                  setThinkingSteps([...currentThinkingSteps]);
+                }
+                break;
               }
+
+              case "chart":
+                charts.push(data.config as ChartConfig);
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantMessageId
+                    ? { ...m, charts: [...charts] }
+                    : m
+                ));
+                break;
+
+              case "done":
+                // Mark all steps complete
+                currentThinkingSteps.forEach(s => s.status = "complete");
+                setThinkingSteps([...currentThinkingSteps]);
+
+                // Mark streaming complete
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantMessageId
+                    ? { ...m, isStreaming: false, thinkingSteps: currentThinkingSteps }
+                    : m
+                ));
+                break;
+
+              case "error":
+                throw new Error(data.message);
+            }
+          } catch (e) {
+            // Skip invalid JSON lines
+            if (line.trim() && !line.includes("[DONE]")) {
+              console.warn("Failed to parse SSE data:", line, e);
             }
           }
+        }
+      }
+
+      // Process any remaining buffer content
+      if (lineBuffer.startsWith("data: ")) {
+        try {
+          const data = JSON.parse(lineBuffer.slice(6));
+          if (data.type === "text") {
+            assistantContent += data.content;
+            setMessages(prev => prev.map(m =>
+              m.id === assistantMessageId
+                ? { ...m, content: assistantContent, isStreaming: false, thinkingSteps: currentThinkingSteps }
+                : m
+            ));
           }
+        } catch {
+          // Ignore parse errors for incomplete data
         }
       }
     } catch (error) {
