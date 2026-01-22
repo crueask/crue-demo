@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Menu, LogOut, User, Settings, MessageSquare } from "lucide-react";
+import { Menu, LogOut, User, Settings } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./sidebar";
 
@@ -63,17 +63,6 @@ export function Navbar({ userEmail }: NavbarProps) {
           {/* Could add search here later */}
         </div>
         <div className="flex items-center gap-x-4 lg:gap-x-6">
-          {/* AI Chat quick access */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.push("/dashboard/chat")}
-            className="hidden sm:flex"
-          >
-            <MessageSquare className="h-5 w-5" />
-            <span className="sr-only">AI Chat</span>
-          </Button>
-
           {/* User dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
