@@ -129,12 +129,7 @@ export default function ReportsAdminPage() {
         .select("organization_id")
         .eq("user_id", user.id);
 
-      console.log("User ID:", user.id);
-      console.log("Org memberships:", orgMemberships);
-      console.log("Org error:", orgError);
-
       if (orgError) {
-        console.error("Error fetching org membership:", orgError);
         setError("Kunne ikke hente organisasjonstilgang: " + orgError.message);
         setLoading(false);
         return;
