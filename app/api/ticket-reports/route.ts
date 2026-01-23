@@ -204,6 +204,67 @@ export async function POST(request: NextRequest) {
           .eq("id", projectId);
       }
 
+      // Check if the report specifies a different stop for this show
+      let targetStopId = stopId;
+
+      if (body.notion_stop_id) {
+        // Look up stop by Notion ID
+        const { data: targetStop } = await supabase
+          .from("stops")
+          .select("id")
+          .eq("notion_id", body.notion_stop_id)
+          .single();
+
+        if (targetStop && targetStop.id !== stopId) {
+          // Show needs to be moved to a different stop
+          targetStopId = targetStop.id;
+        } else if (!targetStop && projectId) {
+          // Stop doesn't exist yet, create it under the current project
+          targetStopId = await findOrCreateStop(
+            projectId,
+            body.notion_stop_id,
+            body.tour_stop_id,
+            body.stop_name,
+            body.stop_venue,
+            body.stop_city,
+            body.stop_country,
+            body.capacity
+          );
+        }
+      } else if (body.tour_stop_id && body.tour_stop_id !== stopId) {
+        // Look up stop by UUID
+        const { data: targetStop } = await supabase
+          .from("stops")
+          .select("id")
+          .eq("id", body.tour_stop_id)
+          .single();
+
+        if (targetStop) {
+          targetStopId = targetStop.id;
+        } else if (projectId) {
+          // Stop doesn't exist yet, create it
+          targetStopId = await findOrCreateStop(
+            projectId,
+            body.notion_stop_id,
+            body.tour_stop_id,
+            body.stop_name,
+            body.stop_venue,
+            body.stop_city,
+            body.stop_country,
+            body.capacity
+          );
+        }
+      }
+
+      // Update show's stop_id if it changed
+      if (targetStopId && targetStopId !== stopId) {
+        await supabase
+          .from("shows")
+          .update({ stop_id: targetStopId })
+          .eq("id", showId);
+        stopId = targetStopId;
+      }
+
       if (stopId) {
         const stopUpdates: Record<string, string | number | null> = {};
         if (body.stop_name) stopUpdates.name = body.stop_name;
