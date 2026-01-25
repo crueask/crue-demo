@@ -32,8 +32,8 @@ const CHART_PREFS_KEY = 'crue_chart_preferences';
 const CHART_DATA_CACHE_KEY = 'crue_chart_data_cache';
 const CACHE_VERSION = 1;
 
-// Cache TTL: historical data can be cached for 24 hours
-const HISTORICAL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+// Cache TTL: 5 minutes to ensure new reports appear quickly
+const HISTORICAL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export interface ChartDataCache {
   version: number;
