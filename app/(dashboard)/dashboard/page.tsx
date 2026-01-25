@@ -253,17 +253,26 @@ async function getDashboardData() {
   const ticketsByDateAndProject: Record<string, Record<string, { actual: number; estimated: number; actualRevenue: number }>> = {};
 
   // Initialize all 14 days
+  const bucketDates: string[] = [];
   for (let i = 0; i < 14; i++) {
     const date = new Date();
     date.setDate(date.getDate() - 1 - (13 - i));
     const dateStr = date.toISOString().split('T')[0];
+    bucketDates.push(dateStr);
     ticketsByDateAndProject[dateStr] = {};
     for (const project of projectsWithStats) {
       ticketsByDateAndProject[dateStr][project.id] = { actual: 0, estimated: 0, actualRevenue: 0 };
     }
   }
 
+  // DEBUG: Log bucket dates and distributed data
+  const distributedDates = [...new Set(distributedData.map(d => d.date))].sort();
+  console.log('[Dashboard Debug] Bucket dates:', bucketDates);
+  console.log('[Dashboard Debug] Distributed data dates:', distributedDates);
+  console.log('[Dashboard Debug] Total distributed items:', distributedData.length);
+
   // Fill in distributed data
+  let droppedItems = 0;
   for (const item of distributedData) {
     if (ticketsByDateAndProject[item.date] && ticketsByDateAndProject[item.date][item.projectId]) {
       if (item.isEstimated) {
@@ -272,8 +281,16 @@ async function getDashboardData() {
         ticketsByDateAndProject[item.date][item.projectId].actual += item.tickets;
         ticketsByDateAndProject[item.date][item.projectId].actualRevenue += item.revenue;
       }
+    } else {
+      droppedItems++;
+      if (droppedItems <= 5) {
+        console.log(`[Dashboard Debug] DROPPED: date=${item.date}, projectId=${item.projectId}, tickets=${item.tickets}`);
+      }
     }
   }
+  console.log(`[Dashboard Debug] Total dropped items: ${droppedItems}`);
+  console.log(`[Dashboard Debug] Yesterday bucket date: ${bucketDates[bucketDates.length - 1]}`);
+  console.log(`[Dashboard Debug] Data for yesterday:`, ticketsByDateAndProject[bucketDates[bucketDates.length - 1]]);
 
   // Convert to chart format with separate actual and estimated values
   const chartData = Object.entries(ticketsByDateAndProject)
