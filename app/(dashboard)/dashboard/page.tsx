@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DashboardChartWrapper } from "@/components/dashboard/dashboard-chart-wrapper";
 import { ProjectGrid } from "@/components/dashboard/project-grid";
-import { distributeTicketReports, getEffectiveSalesDate, type TicketReport } from "@/lib/chart-utils";
+import { getEffectiveSalesDate, type TicketReport } from "@/lib/chart-utils";
 import { MotleyContainer } from "@/components/motley";
 
 // Force dynamic rendering - don't cache this page
@@ -200,56 +200,8 @@ async function getDashboardData() {
 
   const activeProjects = projects.filter(p => p.status === "active").length;
 
-  // Calculate distributed ticket data for chart using shared function
-  // Build report dates per project first (for marking actual vs estimated)
-  const reportDatesByProject: Record<string, Set<string>> = {};
-
-  for (const showId of allShowIds) {
-    const tickets = ticketsByShow[showId];
-    const projectId = showToProject[showId];
-    if (!tickets || tickets.length === 0 || !projectId) continue;
-
-    if (!reportDatesByProject[projectId]) {
-      reportDatesByProject[projectId] = new Set();
-    }
-
-    for (const ticket of tickets) {
-      const effectiveDate = getEffectiveSalesDate(ticket as TicketReport);
-      if (effectiveDate) {
-        reportDatesByProject[projectId].add(effectiveDate);
-      }
-    }
-  }
-
-  // Distribute tickets using shared function
-  const distributedData: { date: string; projectId: string; tickets: number; revenue: number; isEstimated: boolean }[] = [];
-
-  for (const showId of allShowIds) {
-    const tickets = ticketsByShow[showId];
-    const projectId = showToProject[showId];
-    if (!tickets || tickets.length === 0 || !projectId) continue;
-
-    const salesStartDate = showInfoMap[showId]?.sales_start_date;
-    const distributed = distributeTicketReports(
-      tickets as TicketReport[],
-      projectId,
-      salesStartDate,
-      reportDatesByProject[projectId] || new Set()
-    );
-
-    // Map distributed items to include projectId alias
-    for (const item of distributed) {
-      distributedData.push({
-        date: item.date,
-        projectId: item.entityId,
-        tickets: item.tickets,
-        revenue: item.revenue,
-        isEstimated: item.isEstimated,
-      });
-    }
-  }
-
-  // Aggregate distributed data by date and project, separating actual vs estimated
+  // For dashboard, use simple date-based aggregation (not distributed over historical periods)
+  // This shows tickets based on WHEN THEY WERE REPORTED, not when they were sold
   const ticketsByDateAndProject: Record<string, Record<string, { actual: number; estimated: number; actualRevenue: number }>> = {};
 
   // Initialize all 14 days
@@ -265,32 +217,34 @@ async function getDashboardData() {
     }
   }
 
-  // DEBUG: Log bucket dates and distributed data
-  const distributedDates = [...new Set(distributedData.map(d => d.date))].sort();
-  console.log('[Dashboard Debug] Bucket dates:', bucketDates);
-  console.log('[Dashboard Debug] Distributed data dates:', distributedDates);
-  console.log('[Dashboard Debug] Total distributed items:', distributedData.length);
+  // Calculate deltas between consecutive reports and place them on the report date
+  for (const showId of allShowIds) {
+    const tickets = ticketsByShow[showId];
+    const projectId = showToProject[showId];
+    if (!tickets || tickets.length === 0 || !projectId) continue;
 
-  // Fill in distributed data
-  let droppedItems = 0;
-  for (const item of distributedData) {
-    if (ticketsByDateAndProject[item.date] && ticketsByDateAndProject[item.date][item.projectId]) {
-      if (item.isEstimated) {
-        ticketsByDateAndProject[item.date][item.projectId].estimated += item.tickets;
-      } else {
-        ticketsByDateAndProject[item.date][item.projectId].actual += item.tickets;
-        ticketsByDateAndProject[item.date][item.projectId].actualRevenue += item.revenue;
+    // Tickets are already sorted by sale_date/reported_at
+    let previousTotal = 0;
+    let previousRevenue = 0;
+
+    for (const ticket of tickets) {
+      const effectiveDate = getEffectiveSalesDate(ticket as TicketReport);
+      if (!effectiveDate) continue;
+
+      // Calculate delta from previous report
+      const ticketDelta = ticket.quantity_sold - previousTotal;
+      const revenueDelta = Number(ticket.revenue) - previousRevenue;
+
+      // Only add positive deltas to the chart
+      if (ticketDelta > 0 && ticketsByDateAndProject[effectiveDate]?.[projectId]) {
+        ticketsByDateAndProject[effectiveDate][projectId].actual += ticketDelta;
+        ticketsByDateAndProject[effectiveDate][projectId].actualRevenue += revenueDelta > 0 ? revenueDelta : 0;
       }
-    } else {
-      droppedItems++;
-      if (droppedItems <= 5) {
-        console.log(`[Dashboard Debug] DROPPED: date=${item.date}, projectId=${item.projectId}, tickets=${item.tickets}`);
-      }
+
+      previousTotal = ticket.quantity_sold;
+      previousRevenue = Number(ticket.revenue);
     }
   }
-  console.log(`[Dashboard Debug] Total dropped items: ${droppedItems}`);
-  console.log(`[Dashboard Debug] Yesterday bucket date: ${bucketDates[bucketDates.length - 1]}`);
-  console.log(`[Dashboard Debug] Data for yesterday:`, ticketsByDateAndProject[bucketDates[bucketDates.length - 1]]);
 
   // Convert to chart format with separate actual and estimated values
   const chartData = Object.entries(ticketsByDateAndProject)
