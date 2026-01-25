@@ -126,7 +126,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     }
 
     // Fetch tickets
-    const { data: allTickets } = allShowIds.length > 0
+    const { data: allTickets, error: ticketsError } = allShowIds.length > 0
       ? await supabase
           .from("tickets")
           .select("show_id, quantity_sold, revenue, sale_date, reported_at")
@@ -134,6 +134,19 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
           .order("sale_date", { ascending: true, nullsFirst: false })
           .order("reported_at", { ascending: true })
       : { data: [] };
+
+    // DEBUG: Log ticket fetch results
+    console.log('[DashboardChart Debug] Shows count:', allShowIds.length);
+    console.log('[DashboardChart Debug] Tickets fetched:', allTickets?.length || 0);
+    console.log('[DashboardChart Debug] Tickets error:', ticketsError);
+    if (allTickets && allTickets.length > 0) {
+      // Find the most recent reported_at dates
+      const sortedByReportedAt = [...allTickets]
+        .filter(t => t.reported_at)
+        .sort((a, b) => (b.reported_at || '').localeCompare(a.reported_at || ''));
+      console.log('[DashboardChart Debug] Most recent 5 reported_at:',
+        sortedByReportedAt.slice(0, 5).map(t => ({ reported_at: t.reported_at, sale_date: t.sale_date })));
+    }
 
     // Group tickets by show
     type TicketRow = { show_id: string; quantity_sold: number; revenue: number; sale_date: string | null; reported_at: string | null };
