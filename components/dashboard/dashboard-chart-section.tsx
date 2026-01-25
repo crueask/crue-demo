@@ -125,7 +125,8 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
       }
     }
 
-    // Fetch tickets
+    // Fetch tickets - use range() to override default 1000 limit
+    // We need all tickets to calculate proper deltas and distributions
     const { data: allTickets, error: ticketsError } = allShowIds.length > 0
       ? await supabase
           .from("tickets")
@@ -133,6 +134,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
           .in("show_id", allShowIds)
           .order("sale_date", { ascending: true, nullsFirst: false })
           .order("reported_at", { ascending: true })
+          .range(0, 9999) // Override default 1000 limit
       : { data: [] };
 
     // DEBUG: Log ticket fetch results

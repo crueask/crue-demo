@@ -91,7 +91,7 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
       }
     }
 
-    // Fetch tickets
+    // Fetch tickets - use range() to override default 1000 limit
     const { data: allTickets } = allShowIds.length > 0
       ? await supabase
           .from("tickets")
@@ -99,6 +99,7 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
           .in("show_id", allShowIds)
           .order("sale_date", { ascending: true, nullsFirst: false })
           .order("reported_at", { ascending: true })
+          .range(0, 9999)
       : { data: [] };
 
     // Group tickets by show

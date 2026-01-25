@@ -148,6 +148,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
     // Batch fetch all tickets for all shows in ONE query
     // We need the latest ticket per show, so we fetch all and process in JS
+    // Use range() to override default 1000 limit
     const { data: allTickets } = allShowIds.length > 0
       ? await supabase
           .from("tickets")
@@ -155,6 +156,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           .in("show_id", allShowIds)
           .order("sale_date", { ascending: false, nullsFirst: false })
           .order("reported_at", { ascending: false })
+          .range(0, 9999)
       : { data: [] };
 
     // Get the latest ticket per show (first one in sorted order for each show_id)

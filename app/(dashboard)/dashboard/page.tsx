@@ -119,6 +119,7 @@ async function getDashboardData() {
   const today = new Date().toISOString().split('T')[0];
 
   // Fetch all tickets for all shows in one query
+  // Use range() to override default 1000 limit
   const { data: allTickets } = allShowIds.length > 0
     ? await adminClient
         .from("tickets")
@@ -126,6 +127,7 @@ async function getDashboardData() {
         .in("show_id", allShowIds)
         .order("sale_date", { ascending: true, nullsFirst: false })
         .order("reported_at", { ascending: true })
+        .range(0, 9999)
     : { data: [] };
 
   // Group tickets by show_id
