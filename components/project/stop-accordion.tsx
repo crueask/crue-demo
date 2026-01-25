@@ -521,18 +521,18 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200">
+    <div className="bg-card rounded-lg border border-border/50">
       {/* Header - clickable */}
       <button
         onClick={handleToggleOpen}
-        className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+        className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors text-left"
       >
         <div className="flex-1">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <h3 className="font-medium text-gray-900">
+              <h3 className="font-medium text-foreground">
                 {stop.shows.length > 0 && (
-                  <span className="text-gray-500 font-normal">{getDateRangeLabel()} – </span>
+                  <span className="text-muted-foreground font-normal">{getDateRangeLabel()} – </span>
                 )}
                 {stop.name}
               </h3>
@@ -551,12 +551,12 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                 </TooltipProvider>
               )}
             </div>
-            <span className="text-sm text-gray-500">{fillRate}%</span>
+            <span className="text-sm text-muted-foreground">{fillRate}%</span>
           </div>
-          <div className="flex items-center gap-4 text-sm text-gray-500 mb-2">
+          <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
             <span>{stop.shows.length} show</span>
           </div>
-          <Progress value={fillRate} className="h-2 bg-gray-100" />
+          <Progress value={fillRate} className="h-2 bg-muted" />
         </div>
         <div className="ml-4 flex items-center gap-2">
           <DropdownMenu>
@@ -572,18 +572,18 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          {isOpen ? <ChevronUp className="h-5 w-5 text-gray-400" /> : <ChevronDown className="h-5 w-5 text-gray-400" />}
+          {isOpen ? <ChevronUp className="h-5 w-5 text-muted-foreground/70" /> : <ChevronDown className="h-5 w-5 text-muted-foreground/70" />}
         </div>
       </button>
 
       {/* Expanded content */}
       {isOpen && (
-        <div className="px-4 pb-4 border-t border-gray-100">
+        <div className="px-4 pb-4 border-t border-border/30">
           {/* Stop-level chart grouped by shows */}
           {stop.shows.length > 0 && (
             <div className="mt-4 mb-6">
               {loadingCharts ? (
-                <div className="h-[180px] flex items-center justify-center text-sm text-gray-500">
+                <div className="h-[180px] flex items-center justify-center text-sm text-muted-foreground">
                   Laster graf...
                 </div>
               ) : (
@@ -613,13 +613,13 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
           {/* Shows list */}
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Show
               </span>
             </div>
 
             {stop.shows.length === 0 ? (
-              <p className="text-sm text-gray-500 py-4 text-center">
+              <p className="text-sm text-muted-foreground py-4 text-center">
                 Ingen show ennå. Show opprettes automatisk via API.
               </p>
             ) : (
@@ -630,41 +630,41 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                 const isShowExpanded = expandedShows.has(show.id);
 
                 return (
-                  <div key={show.id} className="border border-gray-100 rounded-lg">
+                  <div key={show.id} className="border border-border/30 rounded-lg">
                     {/* Show header row */}
                     <div className="flex items-center gap-4 p-3">
                       {/* Expand button */}
                       <button
                         onClick={() => toggleShowExpanded(show.id)}
-                        className="p-1 hover:bg-gray-100 rounded transition-colors"
+                        className="p-1 hover:bg-muted rounded transition-colors"
                       >
                         {isShowExpanded ? (
-                          <ChevronDown className="h-4 w-4 text-gray-400" />
+                          <ChevronDown className="h-4 w-4 text-muted-foreground/70" />
                         ) : (
-                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                          <ChevronRight className="h-4 w-4 text-muted-foreground/70" />
                         )}
                       </button>
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 text-sm">
-                          <span className="font-medium text-gray-900">
+                          <span className="font-medium text-foreground">
                             {show.name || `${formatDate(show.date)} ${stop.name}`}
                           </span>
                           {show.time && (
-                            <span className="text-gray-500">{formatTime(show.time)}</span>
+                            <span className="text-muted-foreground">{formatTime(show.time)}</span>
                           )}
                         </div>
                       </div>
                       <div className="w-32">
-                        <Progress value={showFillRate} className="h-1.5 bg-gray-100" />
+                        <Progress value={showFillRate} className="h-1.5 bg-muted" />
                       </div>
-                      <div className="w-12 text-right text-sm text-gray-500">
+                      <div className="w-12 text-right text-sm text-muted-foreground">
                         {showFillRate}%
                       </div>
-                      <div className="w-20 text-right text-sm text-gray-900">
+                      <div className="w-20 text-right text-sm text-foreground">
                         {formatNumber(show.tickets_sold)}
                         {show.capacity && (
-                          <span className="text-gray-400">/{formatNumber(show.capacity)}</span>
+                          <span className="text-muted-foreground/70">/{formatNumber(show.capacity)}</span>
                         )}
                       </div>
                       <DropdownMenu>
@@ -705,7 +705,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                             height={150}
                           />
                         ) : (
-                          <div className="h-[150px] flex items-center justify-center text-sm text-gray-500">
+                          <div className="h-[150px] flex items-center justify-center text-sm text-muted-foreground">
                             Laster graf...
                           </div>
                         )}
@@ -730,36 +730,36 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
           </DialogHeader>
 
           {loadingTickets ? (
-            <div className="py-8 text-center text-gray-500">Laster rapporter...</div>
+            <div className="py-8 text-center text-muted-foreground">Laster rapporter...</div>
           ) : tickets.length === 0 ? (
-            <div className="py-8 text-center text-gray-500">
+            <div className="py-8 text-center text-muted-foreground">
               Ingen rapporter registrert for dette showet.
             </div>
           ) : (
             <div className="max-h-96 overflow-y-auto">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 sticky top-0">
+                <thead className="bg-muted/50 sticky top-0">
                   <tr>
-                    <th className="text-left py-2 px-3 font-medium text-gray-500">Dato</th>
-                    <th className="text-right py-2 px-3 font-medium text-gray-500">Antall</th>
-                    <th className="text-right py-2 px-3 font-medium text-gray-500">Inntekt</th>
-                    <th className="text-left py-2 px-3 font-medium text-gray-500">Kilde</th>
-                    <th className="text-right py-2 px-3 font-medium text-gray-500">Handlinger</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Dato</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">Antall</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">Inntekt</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Kilde</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">Handlinger</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-border/30">
                   {tickets.map((ticket) => (
-                    <tr key={ticket.id} className="hover:bg-gray-50">
-                      <td className="py-2 px-3 text-gray-600">
+                    <tr key={ticket.id} className="hover:bg-muted/50">
+                      <td className="py-2 px-3 text-muted-foreground">
                         {formatDateTime(ticket.created_at)}
                       </td>
-                      <td className="py-2 px-3 text-right text-gray-900">
+                      <td className="py-2 px-3 text-right text-foreground">
                         {formatNumber(ticket.quantity_sold)}
                       </td>
-                      <td className="py-2 px-3 text-right text-gray-900">
+                      <td className="py-2 px-3 text-right text-foreground">
                         {formatCurrency(ticket.revenue)}
                       </td>
-                      <td className="py-2 px-3 text-gray-600">
+                      <td className="py-2 px-3 text-muted-foreground">
                         {ticket.source || "-"}
                       </td>
                       <td className="py-2 px-3 text-right">
@@ -785,13 +785,13 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                     </tr>
                   ))}
                 </tbody>
-                <tfoot className="bg-gray-50 border-t">
+                <tfoot className="bg-muted/50 border-t">
                   <tr>
-                    <td className="py-2 px-3 font-medium text-gray-900">Totalt</td>
-                    <td className="py-2 px-3 text-right font-medium text-gray-900">
+                    <td className="py-2 px-3 font-medium text-foreground">Totalt</td>
+                    <td className="py-2 px-3 text-right font-medium text-foreground">
                       {formatNumber(tickets.reduce((sum, t) => sum + t.quantity_sold, 0))}
                     </td>
-                    <td className="py-2 px-3 text-right font-medium text-gray-900">
+                    <td className="py-2 px-3 text-right font-medium text-foreground">
                       {formatCurrency(tickets.reduce((sum, t) => sum + Number(t.revenue), 0))}
                     </td>
                     <td colSpan={2}></td>
@@ -880,7 +880,7 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                   value={editSalesStartDate}
                   onChange={(e) => setEditSalesStartDate(e.target.value)}
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Brukes til å estimere daglig salg i grafene. Overstyres av API hvis en ny verdi sendes.
                 </p>
               </div>

@@ -14,18 +14,18 @@ export function StatCard({ title, value, change, icon: Icon, description }: Stat
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <CardTitle className="text-label">{title}</CardTitle>
         <Icon className="h-4 w-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-display-sm text-foreground">{value}</div>
         {(change !== undefined || description) && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground mt-1">
             {change !== undefined && (
               <span
                 className={cn(
                   "font-medium",
-                  change >= 0 ? "text-green-600" : "text-red-600"
+                  change >= 0 ? "text-foreground" : "text-destructive"
                 )}
               >
                 {change >= 0 ? "+" : ""}

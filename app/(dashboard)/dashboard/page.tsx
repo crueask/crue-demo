@@ -347,35 +347,35 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Turnéoversikt</h1>
-        <p className="text-gray-500 mt-1">
+        <h1 className="text-display-lg text-foreground">Turnéoversikt</h1>
+        <p className="text-muted-foreground mt-2">
           Følg billettsalg og resultater på tvers av alle turnéer
         </p>
       </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <p className="text-sm text-gray-500">Billetter solgt i går</p>
-          <p className="text-3xl font-semibold text-blue-600 mt-1">
+        <div className="bg-card rounded-2xl border border-border/50 p-6 shadow-[var(--shadow-card)]">
+          <p className="text-label">Billetter solgt i går</p>
+          <p className="text-display-sm text-foreground mt-2">
             +{formatNumber(stats.ticketsToday)}
           </p>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <p className="text-sm text-gray-500">Billetter siste 7 dager</p>
-          <p className="text-3xl font-semibold text-blue-600 mt-1">
+        <div className="bg-card rounded-2xl border border-border/50 p-6 shadow-[var(--shadow-card)]">
+          <p className="text-label">Billetter siste 7 dager</p>
+          <p className="text-display-sm text-foreground mt-2">
             +{formatNumber(stats.ticketsWeek)}
           </p>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <p className="text-sm text-gray-500">Omsetning siste 7 dager</p>
-          <p className="text-3xl font-semibold text-blue-600 mt-1">
+        <div className="bg-card rounded-2xl border border-border/50 p-6 shadow-[var(--shadow-card)]">
+          <p className="text-label">Omsetning siste 7 dager</p>
+          <p className="text-display-sm text-foreground mt-2">
             {formatCurrency(stats.revenueWeek)}
           </p>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <p className="text-sm text-gray-500">Aktive turnéer</p>
-          <p className="text-3xl font-semibold text-gray-900 mt-1">
+        <div className="bg-card rounded-2xl border border-border/50 p-6 shadow-[var(--shadow-card)]">
+          <p className="text-label">Aktive turnéer</p>
+          <p className="text-display-sm text-foreground mt-2">
             {stats.activeProjects}
           </p>
         </div>

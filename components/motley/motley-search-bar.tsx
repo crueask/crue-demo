@@ -47,7 +47,7 @@ export function MotleySearchBar({
       <div
         className={cn(
           "relative rounded-2xl transition-all duration-500",
-          isProcessing ? "motley-gradient-border" : "border border-gray-200 hover:border-gray-300"
+          isProcessing ? "motley-gradient-border" : "border border-border/60 hover:border-border"
         )}
       >
         {/* Gradient overlay when processing */}
@@ -55,20 +55,20 @@ export function MotleySearchBar({
           <div className="absolute inset-0 rounded-2xl motley-gradient-bg opacity-20 pointer-events-none" />
         )}
 
-        <div className="relative flex items-start gap-3 p-3 bg-white rounded-2xl">
+        <div className="relative flex items-start gap-3 p-3 bg-card rounded-2xl">
           {/* Sparkle icon */}
           <div
             className={cn(
               "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300",
               isProcessing
                 ? "bg-gradient-to-br from-purple-400 via-pink-400 to-blue-400 animate-pulse"
-                : "bg-gray-100"
+                : "bg-muted"
             )}
           >
             <Sparkles
               className={cn(
                 "w-4 h-4 transition-colors",
-                isProcessing ? "text-white" : "text-gray-500"
+                isProcessing ? "text-white" : "text-muted-foreground"
               )}
             />
           </div>
@@ -83,7 +83,7 @@ export function MotleySearchBar({
             disabled={isProcessing}
             rows={1}
             className={cn(
-              "flex-1 resize-none bg-transparent text-gray-900 placeholder-gray-400",
+              "flex-1 resize-none bg-transparent text-foreground placeholder-muted-foreground",
               "focus:outline-none min-h-[32px] max-h-[120px] py-1",
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}
@@ -96,8 +96,8 @@ export function MotleySearchBar({
             className={cn(
               "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200",
               input.trim() && !isProcessing
-                ? "bg-gray-900 text-white hover:bg-gray-800"
-                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                ? "bg-foreground text-background hover:bg-foreground/90"
+                : "bg-muted text-muted-foreground cursor-not-allowed"
             )}
           >
             <Send className="w-4 h-4" />
