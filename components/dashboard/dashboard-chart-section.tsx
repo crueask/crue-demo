@@ -15,16 +15,9 @@ import {
   saveChartPreferences,
   defaultChartPreferences,
   getDateRange,
-  distributeValues,
   toCumulative,
   filterChartData,
   removeEstimations,
-  addDays,
-  daysBetween,
-  getYesterday,
-  getCachedChartData,
-  saveChartDataToCache,
-  mergeCachedAndFreshData,
   distributeTicketReports,
   getEffectiveSalesDate,
 } from "@/lib/chart-utils";
@@ -47,8 +40,6 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
   const [adSpendData, setAdSpendData] = useState<Record<string, number>>({});
   // Start with no loading if we have initial data
   const [loading, setLoading] = useState(!initialChartData);
-  // Track if we're doing a background refresh (show cached data while fetching fresh)
-  const [isBackgroundRefresh, setIsBackgroundRefresh] = useState(false);
   // Track if user has changed preferences from defaults
   const [prefsChanged, setPrefsChanged] = useState(false);
 
@@ -85,42 +76,8 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     );
 
     const projectIds = projects.map(p => p.id);
-    const yesterday = getYesterday();
 
-    // Check for cached historical data
-    const cachedResult = getCachedChartData(prefs, projectIds);
-    const hasCachedData = cachedResult !== null;
-
-    // If we have cached data, show it immediately and do a background refresh
-    // This gives instant perceived performance while keeping data fresh
-    if (hasCachedData && chartData.length === 0) {
-      // Apply transforms to cached data for immediate display
-      const entityIds = projects.map(p => p.id);
-      let displayData = filterChartData(cachedResult.data, selectedEntities, entityIds);
-      const isCumulative = prefs.metric === 'tickets_cumulative' || prefs.metric === 'revenue_cumulative';
-      if (isCumulative) {
-        const filteredEntityIds = selectedEntities.includes('all') || selectedEntities.length === 0
-          ? entityIds
-          : selectedEntities;
-        displayData = toCumulative(displayData, filteredEntityIds);
-      }
-      if (!prefs.showEstimations) {
-        displayData = removeEstimations(displayData, entityIds);
-      }
-      setChartData(displayData);
-      setIsBackgroundRefresh(true);
-    } else {
-      setLoading(true);
-    }
-
-    // Determine the date range we need to fetch fresh
-    // If we have cached data, only fetch from the day after cached data ends
-    // Always fetch yesterday's data fresh (reports come in for yesterday)
-    let freshStartDate = startDate;
-    if (hasCachedData && cachedResult.cachedUpToDate >= startDate) {
-      // Start fetching from the day after the last cached date
-      freshStartDate = addDays(cachedResult.cachedUpToDate, 1);
-    }
+    setLoading(true);
 
     // Fetch stops
     const { data: allStops } = await supabase
@@ -281,19 +238,6 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
         return dataPoint;
       });
 
-    // Merge with cached historical data if available
-    if (hasCachedData && cachedResult.cachedUpToDate >= startDate) {
-      formattedData = mergeCachedAndFreshData(
-        cachedResult.data,
-        formattedData,
-        cachedResult.cachedUpToDate
-      );
-    }
-
-    // Save to cache for future use (before transformations)
-    // This caches the raw daily data excluding yesterday
-    saveChartDataToCache(prefs, projectIds, formattedData);
-
     // Apply entity filter
     const entityIds = projects.map(p => p.id);
     formattedData = filterChartData(formattedData, selectedEntities, entityIds);
@@ -327,8 +271,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     }
 
     setLoading(false);
-    setIsBackgroundRefresh(false);
-  }, [projects, prefs, selectedEntities, chartData.length]);
+  }, [projects, prefs, selectedEntities]);
 
   // Only fetch if we don't have initial data OR if preferences changed from defaults
   useEffect(() => {
