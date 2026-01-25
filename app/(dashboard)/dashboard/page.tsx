@@ -5,6 +5,10 @@ import { ProjectGrid } from "@/components/dashboard/project-grid";
 import { distributeTicketReports, getEffectiveSalesDate, type TicketReport } from "@/lib/chart-utils";
 import { MotleyContainer } from "@/components/motley";
 
+// Force dynamic rendering - don't cache this page
+// New reports are submitted via API and need to appear immediately
+export const dynamic = 'force-dynamic';
+
 interface ProjectWithStats {
   id: string;
   name: string;
