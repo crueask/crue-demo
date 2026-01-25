@@ -219,11 +219,6 @@ async function getDashboardData() {
     }
   }
 
-  // DEBUG: Log ticket data to understand the date issue
-  let totalTicketsProcessed = 0;
-  let ticketsInWindow = 0;
-  let ticketsOutsideWindow = 0;
-  const sampleDates: { effectiveDate: string; reportedAt: string | null; saleDate: string | null }[] = [];
 
   // Calculate deltas between consecutive reports and place them on the report date
   for (const showId of allShowIds) {
@@ -236,18 +231,8 @@ async function getDashboardData() {
     let previousRevenue = 0;
 
     for (const ticket of tickets) {
-      totalTicketsProcessed++;
       const effectiveDate = getEffectiveSalesDate(ticket as TicketReport);
       if (!effectiveDate) continue;
-
-      // DEBUG: Collect sample dates
-      if (sampleDates.length < 10) {
-        sampleDates.push({
-          effectiveDate,
-          reportedAt: ticket.reported_at,
-          saleDate: ticket.sale_date,
-        });
-      }
 
       // Calculate delta from previous report
       const ticketDelta = ticket.quantity_sold - previousTotal;
@@ -257,22 +242,12 @@ async function getDashboardData() {
       if (ticketDelta > 0 && ticketsByDateAndProject[effectiveDate]?.[projectId]) {
         ticketsByDateAndProject[effectiveDate][projectId].actual += ticketDelta;
         ticketsByDateAndProject[effectiveDate][projectId].actualRevenue += revenueDelta > 0 ? revenueDelta : 0;
-        ticketsInWindow++;
-      } else if (ticketDelta > 0) {
-        ticketsOutsideWindow++;
       }
 
       previousTotal = ticket.quantity_sold;
       previousRevenue = Number(ticket.revenue);
     }
   }
-
-  // DEBUG: Log the findings
-  console.log('[Dashboard Debug] Bucket date range:', bucketDates[0], 'to', bucketDates[bucketDates.length - 1]);
-  console.log('[Dashboard Debug] Total tickets processed:', totalTicketsProcessed);
-  console.log('[Dashboard Debug] Tickets with deltas in window:', ticketsInWindow);
-  console.log('[Dashboard Debug] Tickets with deltas outside window:', ticketsOutsideWindow);
-  console.log('[Dashboard Debug] Sample ticket dates:', JSON.stringify(sampleDates, null, 2));
 
   // Convert to chart format with separate actual and estimated values
   const chartData = Object.entries(ticketsByDateAndProject)
