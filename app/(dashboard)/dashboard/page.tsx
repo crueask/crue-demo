@@ -32,18 +32,21 @@ async function getDashboardData() {
   // Use admin client for data queries (bypasses RLS)
   const adminClient = createAdminClient();
 
-  // Get organization membership (if any)
-  const { data: membership } = await adminClient
-    .from("organization_members")
-    .select("organization_id")
-    .eq("user_id", user.id)
-    .single();
+  // Fetch membership and project memberships IN PARALLEL
+  const [membershipResult, projectMembershipsResult] = await Promise.all([
+    adminClient
+      .from("organization_members")
+      .select("organization_id")
+      .eq("user_id", user.id)
+      .single(),
+    adminClient
+      .from("project_members")
+      .select("project_id")
+      .eq("user_id", user.id)
+  ]);
 
-  // Get direct project memberships
-  const { data: projectMemberships } = await adminClient
-    .from("project_members")
-    .select("project_id")
-    .eq("user_id", user.id);
+  const membership = membershipResult.data;
+  const projectMemberships = projectMembershipsResult.data;
 
   const directProjectIds = projectMemberships?.map(pm => pm.project_id) || [];
 
@@ -131,21 +134,21 @@ async function getDashboardData() {
   const startDate = bucketDates[0];
   const endDate = bucketDates[bucketDates.length - 1];
 
-  // Fetch distribution ranges instead of raw tickets (much smaller!)
-  // Ranges that overlap with the visible date range
-  const { data: distributionRanges } = allShowIds.length > 0
-    ? await adminClient
-        .from("ticket_distribution_ranges")
-        .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
-        .in("show_id", allShowIds)
-        .lte("start_date", endDate)
-        .gte("end_date", startDate)
-    : { data: [] };
+  // Fetch distribution ranges AND latest tickets IN PARALLEL
+  const [distributionRangesResult, latestTicketsResult] = allShowIds.length > 0
+    ? await Promise.all([
+        adminClient
+          .from("ticket_distribution_ranges")
+          .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
+          .in("show_id", allShowIds)
+          .lte("start_date", endDate)
+          .gte("end_date", startDate),
+        adminClient.rpc("get_latest_tickets_for_shows", { show_ids: allShowIds })
+      ])
+    : [{ data: [] }, { data: [] }];
 
-  // Fetch latest ticket totals for project stats using efficient DISTINCT ON function
-  const { data: latestTickets } = allShowIds.length > 0
-    ? await adminClient.rpc("get_latest_tickets_for_shows", { show_ids: allShowIds })
-    : { data: [] };
+  const distributionRanges = distributionRangesResult.data;
+  const latestTickets = latestTicketsResult.data;
 
   // Build lookup map from function results
   const latestTicketByShow: Record<string, { quantity_sold: number; revenue: number }> = {};
