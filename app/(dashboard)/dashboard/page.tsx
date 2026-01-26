@@ -142,23 +142,18 @@ async function getDashboardData() {
         .gte("end_date", startDate)
     : { data: [] };
 
-  // Also fetch latest ticket totals for project stats (capacity %)
-  // This is a simple aggregation query, not the full ticket history
+  // Fetch latest ticket totals for project stats using efficient DISTINCT ON function
   const { data: latestTickets } = allShowIds.length > 0
-    ? await adminClient
-        .from("tickets")
-        .select("show_id, quantity_sold, revenue")
-        .in("show_id", allShowIds)
-        .order("sale_date", { ascending: false, nullsFirst: true })
-        .order("reported_at", { ascending: false })
+    ? await adminClient.rpc("get_latest_tickets_for_shows", { show_ids: allShowIds })
     : { data: [] };
 
-  // Get latest ticket per show for stats
+  // Build lookup map from function results
   const latestTicketByShow: Record<string, { quantity_sold: number; revenue: number }> = {};
   for (const ticket of latestTickets || []) {
-    if (!latestTicketByShow[ticket.show_id]) {
-      latestTicketByShow[ticket.show_id] = ticket;
-    }
+    latestTicketByShow[ticket.show_id] = {
+      quantity_sold: ticket.quantity_sold,
+      revenue: ticket.revenue,
+    };
   }
 
   // Build show to project mapping

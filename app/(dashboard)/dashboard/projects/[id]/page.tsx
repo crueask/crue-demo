@@ -146,29 +146,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       allShowIds.push(show.id);
     }
 
-    // Batch fetch all tickets for all shows in ONE query
-    // We need the latest ticket per show, so we fetch all and process in JS
-    // Use range() to override default 1000 limit
-    const { data: allTickets } = allShowIds.length > 0
-      ? await supabase
-          .from("tickets")
-          .select("show_id, quantity_sold, revenue, sale_date, reported_at")
-          .in("show_id", allShowIds)
-          .order("sale_date", { ascending: false, nullsFirst: false })
-          .order("reported_at", { ascending: false })
-          .range(0, 9999)
+    // Fetch latest ticket totals using efficient DISTINCT ON function
+    const { data: latestTickets } = allShowIds.length > 0
+      ? await supabase.rpc("get_latest_tickets_for_shows", { show_ids: allShowIds })
       : { data: [] };
 
-    // Get the latest ticket per show (first one in sorted order for each show_id)
+    // Build lookup map from function results
     const latestTicketByShow: Record<string, { quantity_sold: number; revenue: number }> = {};
-    for (const ticket of allTickets || []) {
-      // Only keep the first (latest) ticket for each show
-      if (!latestTicketByShow[ticket.show_id]) {
-        latestTicketByShow[ticket.show_id] = {
-          quantity_sold: ticket.quantity_sold,
-          revenue: Number(ticket.revenue),
-        };
-      }
+    for (const ticket of latestTickets || []) {
+      latestTicketByShow[ticket.show_id] = {
+        quantity_sold: ticket.quantity_sold,
+        revenue: Number(ticket.revenue),
+      };
     }
 
     // Build stops with shows data

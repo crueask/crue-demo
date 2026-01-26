@@ -55,51 +55,65 @@ async function getSharedProject(slug: string) {
     return { project, stops: [], hasPassword };
   }
 
-  const stopsWithShows: Stop[] = await Promise.all(
-    stops.map(async (stop) => {
-      const { data: shows } = await supabase
-        .from("shows")
-        .select("*")
-        .eq("stop_id", stop.id)
-        .order("date", { ascending: true });
+  const stopIds = stops.map(s => s.id);
 
-      const showsWithTickets = shows
-        ? await Promise.all(
-            shows.map(async (show) => {
-              // Get the LATEST ticket snapshot for this show (not sum of all)
-              const { data: latestTicket } = await supabase
-                .from("tickets")
-                .select("quantity_sold, revenue")
-                .eq("show_id", show.id)
-                .order("sale_date", { ascending: false, nullsFirst: false })
-                .order("reported_at", { ascending: false })
-                .limit(1)
-                .single();
+  // Batch fetch all shows for all stops in ONE query
+  const { data: allShows } = await supabase
+    .from("shows")
+    .select("*")
+    .in("stop_id", stopIds)
+    .order("date", { ascending: true });
 
-              return {
-                id: show.id,
-                name: show.name,
-                date: show.date,
-                time: show.time,
-                capacity: show.capacity,
-                status: show.status,
-                sales_start_date: show.sales_start_date,
-                tickets_sold: latestTicket?.quantity_sold || 0,
-                revenue: latestTicket ? Number(latestTicket.revenue) : 0,
-              };
-            })
-          )
-        : [];
+  // Group shows by stop
+  const showsByStop: Record<string, typeof allShows> = {};
+  const allShowIds: string[] = [];
+  for (const show of allShows || []) {
+    if (!showsByStop[show.stop_id]) {
+      showsByStop[show.stop_id] = [];
+    }
+    showsByStop[show.stop_id]!.push(show);
+    allShowIds.push(show.id);
+  }
 
+  // Batch fetch latest tickets using efficient DISTINCT ON function
+  const { data: latestTickets } = allShowIds.length > 0
+    ? await supabase.rpc("get_latest_tickets_for_shows", { show_ids: allShowIds })
+    : { data: [] };
+
+  // Build lookup map
+  const latestTicketByShow: Record<string, { quantity_sold: number; revenue: number }> = {};
+  for (const ticket of latestTickets || []) {
+    latestTicketByShow[ticket.show_id] = {
+      quantity_sold: ticket.quantity_sold,
+      revenue: Number(ticket.revenue),
+    };
+  }
+
+  // Build stops with shows data
+  const stopsWithShows: Stop[] = stops.map((stop) => {
+    const shows = (showsByStop[stop.id] || []).map((show) => {
+      const latestTicket = latestTicketByShow[show.id];
       return {
-        id: stop.id,
-        name: stop.name,
-        venue: stop.venue,
-        city: stop.city,
-        shows: showsWithTickets,
+        id: show.id,
+        name: show.name,
+        date: show.date,
+        time: show.time,
+        capacity: show.capacity,
+        status: show.status,
+        sales_start_date: show.sales_start_date,
+        tickets_sold: latestTicket?.quantity_sold || 0,
+        revenue: latestTicket?.revenue || 0,
       };
-    })
-  );
+    });
+
+    return {
+      id: stop.id,
+      name: stop.name,
+      venue: stop.venue,
+      city: stop.city,
+      shows,
+    };
+  });
 
   // Sort stops by first upcoming show date
   const today = new Date().toISOString().split("T")[0];
