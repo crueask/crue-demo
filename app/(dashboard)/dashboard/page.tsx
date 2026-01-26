@@ -2,7 +2,10 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DashboardChartWrapper } from "@/components/dashboard/dashboard-chart-wrapper";
 import { ProjectGrid } from "@/components/dashboard/project-grid";
-import { getEffectiveSalesDate, type TicketReport } from "@/lib/chart-utils";
+import {
+  expandDistributionRanges,
+  type DistributionRange,
+} from "@/lib/chart-utils";
 import { MotleyContainer } from "@/components/motley";
 
 // Force dynamic rendering - don't cache this page
@@ -118,26 +121,44 @@ async function getDashboardData() {
   // Today's date for determining upcoming shows
   const today = new Date().toISOString().split('T')[0];
 
-  // Fetch all tickets for all shows in one query
-  // Use range() to override default 1000 limit
-  const { data: allTickets } = allShowIds.length > 0
+  // Calculate date range for chart (14 days ending yesterday)
+  const bucketDates: string[] = [];
+  for (let i = 0; i < 14; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - 1 - (13 - i));
+    bucketDates.push(date.toISOString().split('T')[0]);
+  }
+  const startDate = bucketDates[0];
+  const endDate = bucketDates[bucketDates.length - 1];
+
+  // Fetch distribution ranges instead of raw tickets (much smaller!)
+  // Ranges that overlap with the visible date range
+  const { data: distributionRanges } = allShowIds.length > 0
     ? await adminClient
-        .from("tickets")
-        .select("show_id, quantity_sold, revenue, sale_date, reported_at")
+        .from("ticket_distribution_ranges")
+        .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
         .in("show_id", allShowIds)
-        .order("sale_date", { ascending: true, nullsFirst: false })
-        .order("reported_at", { ascending: true })
-        .range(0, 9999)
+        .lte("start_date", endDate)
+        .gte("end_date", startDate)
     : { data: [] };
 
-  // Group tickets by show_id
-  type TicketRow = { show_id: string; quantity_sold: number; revenue: number; sale_date: string | null; reported_at: string | null };
-  const ticketsByShow: Record<string, TicketRow[]> = {};
-  for (const ticket of allTickets || []) {
-    if (!ticketsByShow[ticket.show_id]) {
-      ticketsByShow[ticket.show_id] = [];
+  // Also fetch latest ticket totals for project stats (capacity %)
+  // This is a simple aggregation query, not the full ticket history
+  const { data: latestTickets } = allShowIds.length > 0
+    ? await adminClient
+        .from("tickets")
+        .select("show_id, quantity_sold, revenue")
+        .in("show_id", allShowIds)
+        .order("sale_date", { ascending: false, nullsFirst: true })
+        .order("reported_at", { ascending: false })
+    : { data: [] };
+
+  // Get latest ticket per show for stats
+  const latestTicketByShow: Record<string, { quantity_sold: number; revenue: number }> = {};
+  for (const ticket of latestTickets || []) {
+    if (!latestTicketByShow[ticket.show_id]) {
+      latestTicketByShow[ticket.show_id] = ticket;
     }
-    ticketsByShow[ticket.show_id].push(ticket as TicketRow);
   }
 
   // Build show to project mapping
@@ -179,11 +200,11 @@ async function getDashboardData() {
           hasUpcomingShows = true;
         }
 
-        // Get the latest ticket (first one since sorted desc)
-        const tickets = ticketsByShow[show.id];
-        if (tickets && tickets.length > 0) {
-          ticketsSold += tickets[0].quantity_sold;
-          revenue += Number(tickets[0].revenue);
+        // Get the latest ticket for this show
+        const latestTicket = latestTicketByShow[show.id];
+        if (latestTicket) {
+          ticketsSold += latestTicket.quantity_sold;
+          revenue += Number(latestTicket.revenue);
         }
       }
     }
@@ -202,50 +223,33 @@ async function getDashboardData() {
 
   const activeProjects = projects.filter(p => p.status === "active").length;
 
-  // For dashboard, use simple date-based aggregation (not distributed over historical periods)
-  // This shows tickets based on WHEN THEY WERE REPORTED, not when they were sold
-  const ticketsByDateAndProject: Record<string, Record<string, { actual: number; estimated: number; actualRevenue: number }>> = {};
+  // Expand distribution ranges into daily values with estimated sales
+  const distributedItems = expandDistributionRanges(
+    (distributionRanges || []) as DistributionRange[],
+    showToProject,
+    startDate,
+    endDate,
+    'even' // Default distribution weight for server-side rendering
+  );
 
-  // Initialize all 14 days
-  const bucketDates: string[] = [];
-  for (let i = 0; i < 14; i++) {
-    const date = new Date();
-    date.setDate(date.getDate() - 1 - (13 - i));
-    const dateStr = date.toISOString().split('T')[0];
-    bucketDates.push(dateStr);
+  // Initialize chart data structure
+  const ticketsByDateAndProject: Record<string, Record<string, { actual: number; estimated: number; actualRevenue: number }>> = {};
+  for (const dateStr of bucketDates) {
     ticketsByDateAndProject[dateStr] = {};
     for (const project of projectsWithStats) {
       ticketsByDateAndProject[dateStr][project.id] = { actual: 0, estimated: 0, actualRevenue: 0 };
     }
   }
 
+  // Aggregate distributed items by date and project
+  for (const item of distributedItems) {
+    if (!ticketsByDateAndProject[item.date]?.[item.entityId]) continue;
 
-  // Calculate deltas between consecutive reports and place them on the report date
-  for (const showId of allShowIds) {
-    const tickets = ticketsByShow[showId];
-    const projectId = showToProject[showId];
-    if (!tickets || tickets.length === 0 || !projectId) continue;
-
-    // Tickets are already sorted by sale_date/reported_at
-    let previousTotal = 0;
-    let previousRevenue = 0;
-
-    for (const ticket of tickets) {
-      const effectiveDate = getEffectiveSalesDate(ticket as TicketReport);
-      if (!effectiveDate) continue;
-
-      // Calculate delta from previous report
-      const ticketDelta = ticket.quantity_sold - previousTotal;
-      const revenueDelta = Number(ticket.revenue) - previousRevenue;
-
-      // Only add positive deltas to the chart
-      if (ticketDelta > 0 && ticketsByDateAndProject[effectiveDate]?.[projectId]) {
-        ticketsByDateAndProject[effectiveDate][projectId].actual += ticketDelta;
-        ticketsByDateAndProject[effectiveDate][projectId].actualRevenue += revenueDelta > 0 ? revenueDelta : 0;
-      }
-
-      previousTotal = ticket.quantity_sold;
-      previousRevenue = Number(ticket.revenue);
+    if (item.isEstimated) {
+      ticketsByDateAndProject[item.date][item.entityId].estimated += item.tickets;
+    } else {
+      ticketsByDateAndProject[item.date][item.entityId].actual += item.tickets;
+      ticketsByDateAndProject[item.date][item.entityId].actualRevenue += item.revenue;
     }
   }
 

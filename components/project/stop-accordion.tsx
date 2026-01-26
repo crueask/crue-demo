@@ -36,11 +36,8 @@ import { TicketsChart } from "@/components/project/tickets-chart";
 import { StopAdConnections } from "@/components/project/stop-ad-connections";
 import { getStopAdSpend, applyMva } from "@/lib/ad-spend";
 import {
-  distributeTicketReports,
-  getEffectiveSalesDate,
-  type TicketReport,
-  addDays,
-  daysBetween,
+  expandDistributionRanges,
+  type DistributionRange,
 } from "@/lib/chart-utils";
 
 interface Ticket {
@@ -197,79 +194,52 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     setLoadingCharts(true);
     const supabase = createClient();
 
-    // Calculate distributed ticket data for chart with estimations using shared function
-    interface DistributedTicket {
-      date: string;
-      showId: string;
-      tickets: number;
-      revenue: number;
-      isEstimated: boolean;
-    }
-
-    const distributedData: DistributedTicket[] = [];
-
-    // Build report dates per show (for marking actual vs estimated)
-    const reportDatesByShow: Record<string, Set<string>> = {};
-
-    // First pass: collect all ticket data and report dates
-    const ticketsByShowId: Record<string, TicketReport[]> = {};
-
-    for (const show of stop.shows) {
-      const { data: ticketSnapshots } = await supabase
-        .from("tickets")
-        .select("quantity_sold, revenue, sale_date, reported_at")
-        .eq("show_id", show.id)
-        .order("sale_date", { ascending: true, nullsFirst: false })
-        .order("reported_at", { ascending: true });
-
-      if (!ticketSnapshots || ticketSnapshots.length === 0) continue;
-
-      ticketsByShowId[show.id] = ticketSnapshots as TicketReport[];
-
-      // Build report dates set
-      reportDatesByShow[show.id] = new Set();
-      for (const ticket of ticketSnapshots) {
-        const effectiveDate = getEffectiveSalesDate(ticket as TicketReport);
-        if (effectiveDate) {
-          reportDatesByShow[show.id].add(effectiveDate);
-        }
-      }
-    }
-
-    // Use shared distribution function for each show
-    for (const show of stop.shows) {
-      const tickets = ticketsByShowId[show.id];
-      if (!tickets) continue;
-
-      const distributed = distributeTicketReports(
-        tickets,
-        show.id,
-        show.sales_start_date,
-        reportDatesByShow[show.id] || new Set()
-      );
-
-      for (const item of distributed) {
-        distributedData.push({
-          date: item.date,
-          showId: item.entityId,
-          tickets: item.tickets,
-          revenue: item.revenue,
-          isEstimated: item.isEstimated,
-        });
-      }
-    }
-
-    // Aggregate distributed data by date and show
-    const ticketsByDateAndShow: Record<string, Record<string, { actual: number; estimated: number }>> = {};
-    const revenueByDate: Record<string, number> = {};
-
     // Calculate date range for the last 14 days
     const dates: string[] = [];
     for (let i = 0; i < 14; i++) {
       const date = new Date();
       date.setDate(date.getDate() - 1 - (13 - i));
-      const dateStr = date.toISOString().split('T')[0];
-      dates.push(dateStr);
+      dates.push(date.toISOString().split('T')[0]);
+    }
+    const startDate = dates[0];
+    const endDate = dates[dates.length - 1];
+
+    // Get all show IDs
+    const showIds = stop.shows.map(s => s.id);
+    if (showIds.length === 0) {
+      setStopChartData([]);
+      setLoadingCharts(false);
+      return;
+    }
+
+    // Build show to show mapping (each show maps to itself for stop-level aggregation by show)
+    const showToShow: Record<string, string> = {};
+    for (const show of stop.shows) {
+      showToShow[show.id] = show.id;
+    }
+
+    // Fetch distribution ranges instead of raw tickets
+    const { data: distributionRanges } = await supabase
+      .from("ticket_distribution_ranges")
+      .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
+      .in("show_id", showIds)
+      .lte("start_date", endDate)
+      .gte("end_date", startDate);
+
+    // Expand distribution ranges into daily values
+    const distributedItems = expandDistributionRanges(
+      (distributionRanges || []) as DistributionRange[],
+      showToShow,
+      startDate,
+      endDate,
+      'even' // Default weight for stop accordion
+    );
+
+    // Aggregate distributed data by date and show
+    const ticketsByDateAndShow: Record<string, Record<string, { actual: number; estimated: number }>> = {};
+    const revenueByDate: Record<string, number> = {};
+
+    for (const dateStr of dates) {
       ticketsByDateAndShow[dateStr] = {};
       revenueByDate[dateStr] = 0;
       for (const show of stop.shows) {
@@ -277,14 +247,13 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
       }
     }
 
-    for (const item of distributedData) {
-      if (ticketsByDateAndShow[item.date] && ticketsByDateAndShow[item.date][item.showId]) {
+    for (const item of distributedItems) {
+      if (ticketsByDateAndShow[item.date] && ticketsByDateAndShow[item.date][item.entityId]) {
         if (item.isEstimated) {
-          ticketsByDateAndShow[item.date][item.showId].estimated += item.tickets;
+          ticketsByDateAndShow[item.date][item.entityId].estimated += item.tickets;
         } else {
-          ticketsByDateAndShow[item.date][item.showId].actual += item.tickets;
+          ticketsByDateAndShow[item.date][item.entityId].actual += item.tickets;
         }
-        // Aggregate revenue
         revenueByDate[item.date] = (revenueByDate[item.date] || 0) + item.revenue;
       }
     }
@@ -305,8 +274,6 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     setStopRevenueData(revenueByDate);
 
     // Fetch ad spend for the stop
-    const startDate = dates[0];
-    const endDate = dates[dates.length - 1];
     const adSpend = await getStopAdSpend(supabase, stop.id, startDate, endDate);
     setStopAdSpendData(adSpend);
 
@@ -320,43 +287,40 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
     const show = stop.shows.find(s => s.id === showId);
     if (!show) return;
 
-    const { data: ticketSnapshots } = await supabase
-      .from("tickets")
-      .select("quantity_sold, revenue, sale_date, reported_at")
-      .eq("show_id", showId)
-      .order("sale_date", { ascending: true, nullsFirst: false })
-      .order("reported_at", { ascending: true });
-
-    // Build report dates set
-    const reportDates = new Set<string>();
-    for (const ticket of ticketSnapshots || []) {
-      const effectiveDate = getEffectiveSalesDate(ticket as TicketReport);
-      if (effectiveDate) {
-        reportDates.add(effectiveDate);
-      }
-    }
-
-    // Use shared distribution function
-    const distributedData = ticketSnapshots && ticketSnapshots.length > 0
-      ? distributeTicketReports(
-          ticketSnapshots as TicketReport[],
-          showId,
-          show.sales_start_date,
-          reportDates
-        )
-      : [];
-
-    // Aggregate by date
-    const ticketsByDate: Record<string, { actual: number; estimated: number }> = {};
-
+    // Calculate date range for the last 14 days
+    const dates: string[] = [];
     for (let i = 0; i < 14; i++) {
       const date = new Date();
       date.setDate(date.getDate() - 1 - (13 - i));
-      const dateStr = date.toISOString().split('T')[0];
+      dates.push(date.toISOString().split('T')[0]);
+    }
+    const startDate = dates[0];
+    const endDate = dates[dates.length - 1];
+
+    // Fetch distribution ranges for this show
+    const { data: distributionRanges } = await supabase
+      .from("ticket_distribution_ranges")
+      .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
+      .eq("show_id", showId)
+      .lte("start_date", endDate)
+      .gte("end_date", startDate);
+
+    // Expand distribution ranges into daily values
+    const distributedItems = expandDistributionRanges(
+      (distributionRanges || []) as DistributionRange[],
+      { [showId]: showId },
+      startDate,
+      endDate,
+      'even' // Default weight for show chart
+    );
+
+    // Aggregate by date
+    const ticketsByDate: Record<string, { actual: number; estimated: number }> = {};
+    for (const dateStr of dates) {
       ticketsByDate[dateStr] = { actual: 0, estimated: 0 };
     }
 
-    for (const item of distributedData) {
+    for (const item of distributedItems) {
       if (ticketsByDate[item.date]) {
         if (item.isEstimated) {
           ticketsByDate[item.date].estimated += item.tickets;

@@ -761,3 +761,144 @@ export function distributeTicketReports(
 
   return distributedData;
 }
+
+// =============================================================================
+// DISTRIBUTION RANGE EXPANSION
+// =============================================================================
+
+/**
+ * A pre-computed distribution range from the ticket_distribution_ranges table
+ */
+export interface DistributionRange {
+  show_id: string;
+  start_date: string;
+  end_date: string;
+  tickets: number;
+  revenue: number;
+  is_report_date: boolean;
+}
+
+/**
+ * Expand distribution ranges into daily values.
+ * This is much faster than computing from raw tickets because:
+ * - Ranges are pre-computed (delta calculation already done in database trigger)
+ * - Much fewer records to process (~1-5 per show vs ~100+ tickets)
+ *
+ * @param ranges - Pre-computed distribution ranges from database
+ * @param entityIdMap - Map from showId to entityId (project/stop/show ID for aggregation)
+ * @param visibleStartDate - Start of the visible date range
+ * @param visibleEndDate - End of the visible date range
+ * @param distributionWeight - How to distribute values across days ('even', 'early', 'late')
+ * @returns Array of distributed ticket items
+ */
+export function expandDistributionRanges(
+  ranges: DistributionRange[],
+  entityIdMap: Record<string, string>,
+  visibleStartDate: string,
+  visibleEndDate: string,
+  distributionWeight: DistributionWeight = 'even'
+): DistributedTicketItem[] {
+  const result: DistributedTicketItem[] = [];
+
+  // Collect all report dates for isEstimated marking
+  const reportDatesByShow = new Map<string, Set<string>>();
+  for (const range of ranges) {
+    if (range.is_report_date) {
+      if (!reportDatesByShow.has(range.show_id)) {
+        reportDatesByShow.set(range.show_id, new Set());
+      }
+      reportDatesByShow.get(range.show_id)!.add(range.end_date);
+    }
+  }
+
+  // Expand each range into daily values
+  for (const range of ranges) {
+    const entityId = entityIdMap[range.show_id];
+    if (!entityId) continue;
+
+    // Skip ranges with no data (but still need to track report dates)
+    if (range.tickets === 0 && range.revenue === 0) {
+      // Even with 0 values, if it's a report date, record it so it shows as "received" not "missing"
+      if (range.is_report_date && range.end_date >= visibleStartDate && range.end_date <= visibleEndDate) {
+        result.push({
+          date: range.end_date,
+          entityId,
+          tickets: 0,
+          revenue: 0,
+          isEstimated: false,
+        });
+      }
+      continue;
+    }
+
+    const totalDays = daysBetween(range.start_date, range.end_date) + 1;
+    const distributedTickets = distributeValues(range.tickets, totalDays, distributionWeight);
+    const distributedRevenue = distributeValues(range.revenue, totalDays, distributionWeight);
+
+    const showReportDates = reportDatesByShow.get(range.show_id) || new Set();
+
+    for (let i = 0; i < totalDays; i++) {
+      const date = addDays(range.start_date, i);
+
+      // Only include dates in visible range
+      if (date < visibleStartDate || date > visibleEndDate) continue;
+
+      result.push({
+        date,
+        entityId,
+        tickets: distributedTickets[i],
+        revenue: distributedRevenue[i],
+        isEstimated: !showReportDates.has(date),
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Aggregate distributed items by date and entity into chart-ready format
+ */
+export function aggregateDistributedItems(
+  items: DistributedTicketItem[],
+  entityIds: string[],
+  startDate: string,
+  endDate: string
+): ChartDataPoint[] {
+  // Initialize data structure for all dates and entities
+  const dataByDate: Record<string, Record<string, { actual: number; estimated: number; revenue: number }>> = {};
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().split('T')[0];
+    dataByDate[dateStr] = {};
+    for (const entityId of entityIds) {
+      dataByDate[dateStr][entityId] = { actual: 0, estimated: 0, revenue: 0 };
+    }
+  }
+
+  // Aggregate items
+  for (const item of items) {
+    if (!dataByDate[item.date] || !dataByDate[item.date][item.entityId]) continue;
+
+    if (item.isEstimated) {
+      dataByDate[item.date][item.entityId].estimated += item.tickets;
+    } else {
+      dataByDate[item.date][item.entityId].actual += item.tickets;
+      dataByDate[item.date][item.entityId].revenue += item.revenue;
+    }
+  }
+
+  // Convert to ChartDataPoint array
+  return Object.entries(dataByDate)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, entityData]) => {
+      const point: ChartDataPoint = { date };
+      for (const [entityId, values] of Object.entries(entityData)) {
+        point[entityId] = values.actual;
+        point[`${entityId}_estimated`] = values.estimated;
+      }
+      return point;
+    });
+}

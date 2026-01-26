@@ -12,19 +12,15 @@ import {
   type ChartDataPoint,
   type CumulativeBaseline,
   type MissingStop,
-  type TicketReport,
+  type DistributionRange,
   loadChartPreferences,
   saveChartPreferences,
   defaultChartPreferences,
   getDateRange,
-  distributeValues,
   toCumulative,
   filterChartData,
   removeEstimations,
-  addDays,
-  daysBetween,
-  distributeTicketReports,
-  getEffectiveSalesDate,
+  expandDistributionRanges,
 } from "@/lib/chart-utils";
 import { getProjectAdSpend, applyMva } from "@/lib/ad-spend";
 import { ChartSkeleton, LegendSkeleton } from "@/components/ui/chart-skeleton";
@@ -91,32 +87,8 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
       }
     }
 
-    // Fetch tickets - use range() to override default 1000 limit
-    const { data: allTickets } = allShowIds.length > 0
-      ? await supabase
-          .from("tickets")
-          .select("show_id, quantity_sold, revenue, sale_date, reported_at")
-          .in("show_id", allShowIds)
-          .order("sale_date", { ascending: true, nullsFirst: false })
-          .order("reported_at", { ascending: true })
-          .range(0, 9999)
-      : { data: [] };
-
-    // Group tickets by show
-    type TicketRow = { show_id: string; quantity_sold: number; revenue: number; sale_date: string | null; reported_at: string | null };
-    const ticketsByShow: Record<string, TicketRow[]> = {};
-    for (const ticket of allTickets || []) {
-      if (!ticketsByShow[ticket.show_id]) {
-        ticketsByShow[ticket.show_id] = [];
-      }
-      ticketsByShow[ticket.show_id].push(ticket as TicketRow);
-    }
-
     // Determine if we're showing revenue or tickets
     const isRevenue = prefs.metric === 'revenue_daily' || prefs.metric === 'revenue_cumulative';
-
-    // We'll also track revenue by date for ROAS/MER calculations (even when showing tickets)
-    const revenueByDate: Record<string, number> = {};
 
     // Determine aggregation level based on filter
     // If filtering to specific shows, aggregate by show; otherwise by stop
@@ -127,65 +99,62 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
       return false;
     });
 
-    // Calculate distributed data using shared function
-    interface DistributedItem {
-      date: string;
-      entityId: string; // Either stopId or showId depending on filter
-      value: number;
-      revenue: number; // Always track revenue for ROAS/MER
-      isEstimated: boolean;
-    }
-
-    const distributedData: DistributedItem[] = [];
-
-    // Build a set of report dates per entity (for marking actual vs estimated)
-    const reportDatesByEntity: Record<string, Set<string>> = {};
+    // Build show to entity mapping (show -> stop or show -> show depending on filter)
+    const showToEntity: Record<string, string> = {};
     for (const stop of stops) {
       for (const show of stop.shows) {
-        const tickets = ticketsByShow[show.id];
-        if (!tickets) continue;
-        const entityId = filteringToShows ? show.id : stop.id;
+        showToEntity[show.id] = filteringToShows ? show.id : stop.id;
+      }
+    }
+
+    // Fetch distribution ranges instead of raw tickets (much smaller dataset!)
+    const { data: distributionRanges } = allShowIds.length > 0
+      ? await supabase
+          .from("ticket_distribution_ranges")
+          .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
+          .in("show_id", allShowIds)
+          .lte("start_date", endDate)
+          .gte("end_date", startDate)
+      : { data: [] };
+
+    // Expand distribution ranges into daily values with user's preferred weight
+    const distributedItems = expandDistributionRanges(
+      (distributionRanges || []) as DistributionRange[],
+      showToEntity,
+      startDate,
+      endDate,
+      prefs.distributionWeight
+    );
+
+    // Build report dates per entity from the distribution ranges
+    const reportDatesByEntity: Record<string, Set<string>> = {};
+    for (const range of distributionRanges || []) {
+      if (range.is_report_date) {
+        const entityId = showToEntity[range.show_id];
+        if (!entityId) continue;
         if (!reportDatesByEntity[entityId]) {
           reportDatesByEntity[entityId] = new Set();
         }
-        for (const ticket of tickets) {
-          const effectiveDate = getEffectiveSalesDate(ticket as TicketReport);
-          if (effectiveDate) {
-            reportDatesByEntity[entityId].add(effectiveDate);
-          }
-        }
+        reportDatesByEntity[entityId].add(range.end_date);
       }
     }
 
-    for (const stop of stops) {
-      for (const show of stop.shows) {
-        const tickets = ticketsByShow[show.id];
-        if (!tickets || tickets.length === 0) continue;
-
-        const salesStartDate = showInfoMap[show.id]?.sales_start_date;
-        const entityId = filteringToShows ? show.id : stop.id;
-
-        // Use shared distribution function
-        const distributed = distributeTicketReports(
-          tickets as TicketReport[],
-          entityId,
-          salesStartDate,
-          reportDatesByEntity[entityId] || new Set(),
-          prefs.distributionWeight
-        );
-
-        // Map to use appropriate value (tickets or revenue) based on metric
-        for (const item of distributed) {
-          distributedData.push({
-            date: item.date,
-            entityId: item.entityId,
-            value: isRevenue ? item.revenue : item.tickets,
-            revenue: item.revenue,
-            isEstimated: item.isEstimated,
-          });
-        }
-      }
+    // Map to use appropriate value (tickets or revenue) based on metric
+    interface DistributedItem {
+      date: string;
+      entityId: string;
+      value: number;
+      revenue: number;
+      isEstimated: boolean;
     }
+
+    const distributedData: DistributedItem[] = distributedItems.map(item => ({
+      date: item.date,
+      entityId: item.entityId,
+      value: isRevenue ? item.revenue : item.tickets,
+      revenue: item.revenue,
+      isEstimated: item.isEstimated,
+    }));
 
     // Determine entity IDs for chart initialization
     let entityIds: string[];
