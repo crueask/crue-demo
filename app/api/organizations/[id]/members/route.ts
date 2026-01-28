@@ -58,25 +58,32 @@ export async function GET(
 
     const adminClient = createAdminClient();
 
-    // Get organization members with user profiles
-    const { data: members, error: membersError } = await adminClient
+    // Get organization members
+    const { data: membersRaw, error: membersError } = await adminClient
       .from("organization_members")
-      .select(`
-        id,
-        user_id,
-        role,
-        created_at,
-        user_profiles (
-          email,
-          display_name
-        )
-      `)
+      .select("id, user_id, role, created_at")
       .eq("organization_id", organizationId);
 
     if (membersError) {
       console.error("Error fetching members:", membersError);
       return NextResponse.json({ error: "Failed to fetch members" }, { status: 500 });
     }
+
+    // Fetch user profiles separately for each member
+    const members = await Promise.all(
+      (membersRaw || []).map(async (member) => {
+        const { data: profile } = await adminClient
+          .from("user_profiles")
+          .select("email, display_name")
+          .eq("id", member.user_id)
+          .single();
+
+        return {
+          ...member,
+          user_profiles: profile || null,
+        };
+      })
+    );
 
     // Get pending invitations
     const { data: invitations, error: invitationsError } = await adminClient

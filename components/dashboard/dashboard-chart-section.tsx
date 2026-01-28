@@ -85,12 +85,14 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     const projectIds = projects.map(p => p.id);
     setLoading(true);
 
+    const t0 = performance.now();
     // Use server API with single database call
     const response = await fetch("/api/chart-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ startDate, endDate }),
     });
+    console.log(`[Client] API fetch: ${Math.round(performance.now() - t0)}ms`);
 
     if (!response.ok) {
       console.error("Failed to fetch chart data");
@@ -99,6 +101,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     }
 
     const { distributionRanges, showToProject } = await response.json();
+    console.log(`[Client] Got ${distributionRanges?.length || 0} ranges`);
 
     // Determine if we're showing revenue or tickets
     const isRevenue = prefs.metric === 'revenue_daily' || prefs.metric === 'revenue_cumulative';

@@ -3,10 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: NextRequest) {
+  const t0 = Date.now();
   try {
     // Verify user is authenticated
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
+    console.log(`[API chart-data] Auth: ${Date.now() - t0}ms`);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -27,6 +29,7 @@ export async function POST(request: NextRequest) {
       p_start_date: startDate,
       p_end_date: endDate,
     });
+    console.log(`[API chart-data] RPC: ${Date.now() - t0}ms`);
 
     if (error) {
       console.error("Chart data RPC error:", error);
@@ -58,6 +61,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    console.log(`[API chart-data] Total: ${Date.now() - t0}ms`);
     return NextResponse.json({
       distributionRanges: distributionRanges || [],
       showToProject,
