@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { ChartSettings, type ChartEntity } from "@/components/chart/chart-settings";
 import { TicketsByTourChart } from "./tickets-by-tour-chart";
+import { createClient } from "@/lib/supabase/client";
 import {
   type DateRangeType,
   type MetricType,
@@ -58,15 +58,13 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     setPrefsChanged(needsFetch);
   }, []);
 
-  // Fetch chart data when settings change
+  // Fetch chart data when settings change - uses server API to bypass slow RLS
   const fetchChartData = useCallback(async () => {
     if (projects.length === 0) {
       setChartData([]);
       setLoading(false);
       return;
     }
-
-    const supabase = createClient();
 
     const { startDate, endDate } = getDateRange(
       prefs.dateRange,
@@ -78,61 +76,20 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
 
     setLoading(true);
 
-    // Fetch stops
-    const { data: allStops } = await supabase
-      .from("stops")
-      .select("id, project_id")
-      .in("project_id", projectIds);
+    // Use server API to bypass slow RLS policies
+    const response = await fetch("/api/chart-data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectIds, startDate, endDate }),
+    });
 
-    const stopsByProject: Record<string, string[]> = {};
-    const allStopIds: string[] = [];
-    for (const stop of allStops || []) {
-      if (!stopsByProject[stop.project_id]) {
-        stopsByProject[stop.project_id] = [];
-      }
-      stopsByProject[stop.project_id].push(stop.id);
-      allStopIds.push(stop.id);
+    if (!response.ok) {
+      console.error("Failed to fetch chart data");
+      setLoading(false);
+      return;
     }
 
-    // Fetch shows with sales_start_date
-    const { data: allShows } = allStopIds.length > 0
-      ? await supabase.from("shows").select("id, stop_id, sales_start_date").in("stop_id", allStopIds)
-      : { data: [] };
-
-    const showsByStop: Record<string, string[]> = {};
-    const allShowIds: string[] = [];
-    const showInfoMap: Record<string, { sales_start_date: string | null; stopId: string }> = {};
-
-    for (const show of allShows || []) {
-      if (!showsByStop[show.stop_id]) {
-        showsByStop[show.stop_id] = [];
-      }
-      showsByStop[show.stop_id].push(show.id);
-      allShowIds.push(show.id);
-      showInfoMap[show.id] = { sales_start_date: show.sales_start_date, stopId: show.stop_id };
-    }
-
-    // Build show to project mapping
-    const showToProject: Record<string, string> = {};
-    for (const projectId of projectIds) {
-      const stops = stopsByProject[projectId] || [];
-      for (const stopId of stops) {
-        const shows = showsByStop[stopId] || [];
-        for (const showId of shows) {
-          showToProject[showId] = projectId;
-        }
-      }
-    }
-
-    // Fetch distribution ranges instead of raw tickets (much smaller dataset!)
-    const { data: distributionRanges } = allShowIds.length > 0
-      ? await supabase
-          .from("ticket_distribution_ranges")
-          .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
-          .in("show_id", allShowIds)
-          .lte("start_date", endDate)
-          .gte("end_date", startDate)
-      : { data: [] };
+    const { distributionRanges, showToProject } = await response.json();
 
     // Determine if we're showing revenue or tickets
     const isRevenue = prefs.metric === 'revenue_daily' || prefs.metric === 'revenue_cumulative';
@@ -217,8 +174,9 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
 
     setChartData(formattedData);
 
-    // Fetch ad spend if enabled
+    // Fetch ad spend if enabled (uses regular client - ad_spend table has simpler RLS)
     if (prefs.showAdSpend) {
+      const supabase = createClient();
       const adSpend = await getTotalAdSpend(supabase, projectIds, startDate, endDate);
       // Apply MVA if needed
       const adjustedSpend = Object.fromEntries(
