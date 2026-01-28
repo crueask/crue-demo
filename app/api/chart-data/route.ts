@@ -12,105 +12,55 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { projectIds, startDate, endDate } = body;
+    const { startDate, endDate } = body;
 
-    if (!projectIds || !Array.isArray(projectIds) || projectIds.length === 0) {
-      return NextResponse.json({ error: "projectIds required" }, { status: 400 });
+    if (!startDate || !endDate) {
+      return NextResponse.json({ error: "startDate and endDate required" }, { status: 400 });
     }
 
-    // Use admin client to bypass slow RLS policies
+    // Use admin client for single RPC call
     const adminClient = createAdminClient();
 
-    // Verify user has access to these projects
-    const { data: membership } = await adminClient
-      .from("organization_members")
-      .select("organization_id")
-      .eq("user_id", user.id)
-      .single();
+    // ONE database call gets everything!
+    const { data: dashboardData, error } = await adminClient.rpc("get_dashboard_data", {
+      p_user_id: user.id,
+      p_start_date: startDate,
+      p_end_date: endDate,
+    });
 
-    const { data: projectMemberships } = await adminClient
-      .from("project_members")
-      .select("project_id")
-      .eq("user_id", user.id);
-
-    const directProjectIds = new Set(projectMemberships?.map(pm => pm.project_id) || []);
-
-    // Get organization's projects
-    let orgProjectIds = new Set<string>();
-    if (membership) {
-      const { data: orgProjects } = await adminClient
-        .from("projects")
-        .select("id")
-        .eq("organization_id", membership.organization_id);
-      orgProjectIds = new Set(orgProjects?.map(p => p.id) || []);
+    if (error) {
+      console.error("Chart data RPC error:", error);
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 
-    // Filter to only allowed projects
-    const allowedProjectIds = projectIds.filter(
-      (id: string) => orgProjectIds.has(id) || directProjectIds.has(id)
-    );
-
-    if (allowedProjectIds.length === 0) {
-      return NextResponse.json({ distributionRanges: [], shows: [] });
+    if (!dashboardData) {
+      return NextResponse.json({ distributionRanges: [], showToProject: {} });
     }
 
-    // Fetch stops for allowed projects
-    const { data: allStops } = await adminClient
-      .from("stops")
-      .select("id, project_id")
-      .in("project_id", allowedProjectIds);
+    const { projects, stops, shows, distributionRanges } = dashboardData;
 
+    // Build show to project mapping
     const stopsByProject: Record<string, string[]> = {};
-    const allStopIds: string[] = [];
-    for (const stop of allStops || []) {
+    for (const stop of stops || []) {
       if (!stopsByProject[stop.project_id]) {
         stopsByProject[stop.project_id] = [];
       }
       stopsByProject[stop.project_id].push(stop.id);
-      allStopIds.push(stop.id);
     }
 
-    // Fetch shows
-    const { data: allShows } = allStopIds.length > 0
-      ? await adminClient.from("shows").select("id, stop_id, sales_start_date").in("stop_id", allStopIds)
-      : { data: [] };
-
-    const allShowIds: string[] = [];
-    const showInfoMap: Record<string, { sales_start_date: string | null; stopId: string }> = {};
-
-    for (const show of allShows || []) {
-      allShowIds.push(show.id);
-      showInfoMap[show.id] = { sales_start_date: show.sales_start_date, stopId: show.stop_id };
-    }
-
-    // Fetch distribution ranges (no RLS overhead with admin client!)
-    const { data: distributionRanges } = allShowIds.length > 0
-      ? await adminClient
-          .from("ticket_distribution_ranges")
-          .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
-          .in("show_id", allShowIds)
-          .lte("start_date", endDate)
-          .gte("end_date", startDate)
-      : { data: [] };
-
-    // Build show to project mapping
     const showToProject: Record<string, string> = {};
-    for (const projectId of allowedProjectIds) {
-      const stops = stopsByProject[projectId] || [];
-      for (const stopId of stops) {
-        for (const show of allShows || []) {
-          if (show.stop_id === stopId) {
-            showToProject[show.id] = projectId;
-          }
+    for (const project of projects || []) {
+      const projectStops = stopsByProject[project.id] || [];
+      for (const show of shows || []) {
+        if (projectStops.includes(show.stop_id)) {
+          showToProject[show.id] = project.id;
         }
       }
     }
 
     return NextResponse.json({
       distributionRanges: distributionRanges || [],
-      shows: allShows || [],
       showToProject,
-      showInfoMap,
     });
   } catch (error) {
     console.error("Chart data API error:", error);

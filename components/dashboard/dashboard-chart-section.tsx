@@ -46,15 +46,14 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
   const [prefs, setPrefs] = useState<ChartPreferences>(defaultChartPreferences);
   const [selectedEntities, setSelectedEntities] = useState<string[]>(['all']);
 
-  // Load preferences on mount and check if they differ from defaults
+  // Load preferences on mount
+  // Only refetch if DATE RANGE differs (metric is just a display transformation)
   useEffect(() => {
     const saved = loadChartPreferences();
     setPrefs(saved);
-    // Check if saved preferences require fetching fresh data
-    // Server computes 14-day tickets data, so only fetch if preferences differ
-    const needsFetch = saved.dateRange !== '14d' ||
-      saved.metric !== 'tickets_daily' ||
-      saved.showAdSpend;
+    // Only need to fetch if date range differs from server default (14d)
+    // Metric changes (tickets/revenue, daily/cumulative) are just transformations
+    const needsFetch = saved.dateRange !== '14d' || saved.showAdSpend;
     setPrefsChanged(needsFetch);
   }, []);
 
@@ -73,14 +72,13 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     );
 
     const projectIds = projects.map(p => p.id);
-
     setLoading(true);
 
-    // Use server API to bypass slow RLS policies
+    // Use server API with single database call
     const response = await fetch("/api/chart-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectIds, startDate, endDate }),
+      body: JSON.stringify({ startDate, endDate }),
     });
 
     if (!response.ok) {
