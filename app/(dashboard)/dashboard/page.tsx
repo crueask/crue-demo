@@ -58,7 +58,13 @@ async function getDashboardData() {
     return { projects: [], stats: { ticketsToday: 0, ticketsWeek: 0, revenueWeek: 0, activeProjects: 0 }, chartData: [] };
   }
 
-  const { projects, stops: allStops, shows: allShows, latestTickets, distributionRanges } = dashboardData;
+  const { projects, stops: allStops, shows: allShows, latestTickets, distributionRanges } = dashboardData as {
+    projects: any[];
+    stops: any[];
+    shows: any[];
+    latestTickets: any[];
+    distributionRanges: any[];
+  };
 
   if (!projects || projects.length === 0) {
     return { projects: [], stats: { ticketsToday: 0, ticketsWeek: 0, revenueWeek: 0, activeProjects: 0 }, chartData: [] };
