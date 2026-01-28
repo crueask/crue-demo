@@ -46,23 +46,29 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
   const [prefs, setPrefs] = useState<ChartPreferences>(defaultChartPreferences);
   const [selectedEntities, setSelectedEntities] = useState<string[]>(['all']);
 
-  // Load saved preferences on mount - but DON'T trigger full refetch
-  // Use server data initially, only fetch ad spend if enabled
+  // Load saved preferences on mount - fetch ad spend via server API if enabled
   useEffect(() => {
     const saved = loadChartPreferences();
     setPrefs(saved);
 
-    // If ad spend is enabled, fetch it separately (server doesn't provide it)
+    // If ad spend is enabled, fetch it via server API (fast, bypasses RLS)
     if (saved.showAdSpend && projects.length > 0) {
       const fetchAdSpend = async () => {
         const { startDate, endDate } = getDateRange(saved.dateRange, saved.customStartDate, saved.customEndDate);
-        const projectIds = projects.map(p => p.id);
-        const supabase = createClient();
-        const adSpend = await getTotalAdSpend(supabase, projectIds, startDate, endDate);
-        const adjustedSpend = Object.fromEntries(
-          Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, saved.includeMva)])
-        );
-        setAdSpendData(adjustedSpend);
+        const response = await fetch("/api/chart-data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startDate, endDate, includeAdSpend: true }),
+        });
+        if (response.ok) {
+          const { adSpendData: serverAdSpend } = await response.json();
+          if (serverAdSpend) {
+            const adjustedSpend = Object.fromEntries(
+              Object.entries(serverAdSpend).map(([date, amount]) => [date, applyMva(amount as number, saved.includeMva)])
+            );
+            setAdSpendData(adjustedSpend);
+          }
+        }
       };
       fetchAdSpend();
     }
@@ -190,6 +196,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     console.log(`[Client] Total processing: ${Math.round(performance.now() - t1)}ms`);
 
     // Set ad spend from server response (already fetched with admin client)
+    console.log(`[Client] Ad spend from server:`, serverAdSpend ? Object.keys(serverAdSpend).length + ' days' : 'none');
     if (prefs.showAdSpend && serverAdSpend) {
       const adjustedSpend = Object.fromEntries(
         Object.entries(serverAdSpend).map(([date, amount]) => [date, applyMva(amount as number, prefs.includeMva)])
