@@ -46,13 +46,27 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
   const [prefs, setPrefs] = useState<ChartPreferences>(defaultChartPreferences);
   const [selectedEntities, setSelectedEntities] = useState<string[]>(['all']);
 
-  // Load saved preferences on mount - but DON'T trigger refetch
-  // Use server data initially, only refetch when user actively changes settings
+  // Load saved preferences on mount - but DON'T trigger full refetch
+  // Use server data initially, only fetch ad spend if enabled
   useEffect(() => {
     const saved = loadChartPreferences();
     setPrefs(saved);
-    // DON'T set userChangedSettings - we want to use server data on initial load
-  }, []);
+
+    // If ad spend is enabled, fetch it separately (server doesn't provide it)
+    if (saved.showAdSpend && projects.length > 0) {
+      const fetchAdSpend = async () => {
+        const { startDate, endDate } = getDateRange(saved.dateRange, saved.customStartDate, saved.customEndDate);
+        const projectIds = projects.map(p => p.id);
+        const supabase = createClient();
+        const adSpend = await getTotalAdSpend(supabase, projectIds, startDate, endDate);
+        const adjustedSpend = Object.fromEntries(
+          Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, saved.includeMva)])
+        );
+        setAdSpendData(adjustedSpend);
+      };
+      fetchAdSpend();
+    }
+  }, [projects]);
 
   // Fetch chart data when settings change - uses server API to bypass slow RLS
   const fetchChartData = useCallback(async () => {

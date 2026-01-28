@@ -4,8 +4,7 @@ import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProfileTab } from "./profile-tab";
 import { OrganizationsTab } from "./organizations-tab";
-import { OrgMembersTab } from "./org-members-tab";
-import { User, Building2, Users } from "lucide-react";
+import { User, Building2 } from "lucide-react";
 
 interface SettingsContentProps {
   userEmail: string;
@@ -22,7 +21,6 @@ interface UserOrganization {
 
 export function SettingsContent({ userEmail, userId }: SettingsContentProps) {
   const [organizations, setOrganizations] = useState<UserOrganization[]>([]);
-  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadOrganizations = async () => {
@@ -31,11 +29,6 @@ export function SettingsContent({ userEmail, userId }: SettingsContentProps) {
       if (response.ok) {
         const data = await response.json();
         setOrganizations(data.organizations || []);
-        // Select first org where user is admin by default
-        const adminOrg = data.organizations?.find((org: UserOrganization) => org.role === "admin");
-        if (adminOrg) {
-          setSelectedOrgId(adminOrg.id);
-        }
       }
     } catch (error) {
       console.error("Failed to load organizations:", error);
@@ -48,12 +41,9 @@ export function SettingsContent({ userEmail, userId }: SettingsContentProps) {
     loadOrganizations();
   }, []);
 
-  const adminOrgs = organizations.filter((org) => org.role === "admin");
-  const hasAdminOrg = adminOrgs.length > 0;
-
   return (
     <Tabs defaultValue="profile" className="w-full">
-      <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
+      <TabsList className="grid w-full grid-cols-2 lg:w-[300px]">
         <TabsTrigger value="profile" className="flex items-center gap-2">
           <User className="h-4 w-4" />
           <span className="hidden sm:inline">Profil</span>
@@ -62,12 +52,6 @@ export function SettingsContent({ userEmail, userId }: SettingsContentProps) {
           <Building2 className="h-4 w-4" />
           <span className="hidden sm:inline">Organisasjoner</span>
         </TabsTrigger>
-        {hasAdminOrg && (
-          <TabsTrigger value="members" className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            <span className="hidden sm:inline">Medlemmer</span>
-          </TabsTrigger>
-        )}
       </TabsList>
 
       <TabsContent value="profile" className="mt-6">
@@ -81,16 +65,6 @@ export function SettingsContent({ userEmail, userId }: SettingsContentProps) {
           onOrganizationCreated={loadOrganizations}
         />
       </TabsContent>
-
-      {hasAdminOrg && (
-        <TabsContent value="members" className="mt-6">
-          <OrgMembersTab
-            organizations={adminOrgs}
-            selectedOrgId={selectedOrgId}
-            onSelectOrg={setSelectedOrgId}
-          />
-        </TabsContent>
-      )}
     </Tabs>
   );
 }
