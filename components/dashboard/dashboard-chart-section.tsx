@@ -39,22 +39,19 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
   const [adSpendData, setAdSpendData] = useState<Record<string, number>>({});
   // Start with no loading if we have initial data
   const [loading, setLoading] = useState(!initialChartData);
-  // Track if user has changed preferences from defaults
-  const [prefsChanged, setPrefsChanged] = useState(false);
+  // Track if user ACTIVELY changed settings (not initial load)
+  const [userChangedSettings, setUserChangedSettings] = useState(false);
 
   // Chart settings state
   const [prefs, setPrefs] = useState<ChartPreferences>(defaultChartPreferences);
   const [selectedEntities, setSelectedEntities] = useState<string[]>(['all']);
 
-  // Load preferences on mount
-  // Only refetch if DATE RANGE differs (metric is just a display transformation)
+  // Load saved preferences on mount - but DON'T trigger refetch
+  // Use server data initially, only refetch when user actively changes settings
   useEffect(() => {
     const saved = loadChartPreferences();
     setPrefs(saved);
-    // Only need to fetch if date range differs from server default (14d)
-    // Metric changes (tickets/revenue, daily/cumulative) are just transformations
-    const needsFetch = saved.dateRange !== '14d' || saved.showAdSpend;
-    setPrefsChanged(needsFetch);
+    // DON'T set userChangedSettings - we want to use server data on initial load
   }, []);
 
   // Fetch chart data when settings change - uses server API to bypass slow RLS
@@ -188,20 +185,24 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     setLoading(false);
   }, [projects, prefs, selectedEntities]);
 
-  // Only fetch if we don't have initial data OR if preferences changed from defaults
+  // Only fetch if user ACTIVELY changed settings (not on initial load)
   useEffect(() => {
-    if (!initialChartData || prefsChanged) {
+    if (userChangedSettings) {
       fetchChartData();
+      setUserChangedSettings(false); // Reset after fetching
     }
-  }, [fetchChartData, initialChartData, prefsChanged]);
+  }, [fetchChartData, userChangedSettings]);
 
   // Save preferences when they change
   const updatePrefs = (newPrefs: Partial<ChartPreferences>) => {
     const updated = { ...prefs, ...newPrefs };
     setPrefs(updated);
     saveChartPreferences(updated);
-    // Mark preferences as changed to trigger fetch
-    setPrefsChanged(true);
+    // Only refetch if date range changed (other changes are just display transformations)
+    const needsRefetch = newPrefs.dateRange !== undefined || newPrefs.showAdSpend !== undefined;
+    if (needsRefetch) {
+      setUserChangedSettings(true);
+    }
   };
 
   const handleDateRangeChange = (range: DateRangeType, start?: string, end?: string) => {
