@@ -563,6 +563,41 @@ export interface Database {
           created_at?: string;
         };
       };
+      organization_invitations: {
+        Row: {
+          id: string;
+          organization_id: string;
+          email: string;
+          role: "admin" | "member";
+          invited_by: string | null;
+          token: string;
+          expires_at: string;
+          accepted_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          email: string;
+          role?: "admin" | "member";
+          invited_by?: string | null;
+          token: string;
+          expires_at?: string;
+          accepted_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          email?: string;
+          role?: "admin" | "member";
+          invited_by?: string | null;
+          token?: string;
+          expires_at?: string;
+          accepted_at?: string | null;
+          created_at?: string;
+        };
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -586,6 +621,8 @@ export type DataSummary = Database["public"]["Tables"]["data_summaries"]["Row"];
 export type UserProfile = Database["public"]["Tables"]["user_profiles"]["Row"];
 export type ProjectMember = Database["public"]["Tables"]["project_members"]["Row"];
 export type ProjectInvitation = Database["public"]["Tables"]["project_invitations"]["Row"];
+export type OrganizationMember = Database["public"]["Tables"]["organization_members"]["Row"];
+export type OrganizationInvitation = Database["public"]["Tables"]["organization_invitations"]["Row"];
 
 // User role types
 export type ProjectRole = "viewer" | "editor" | "admin" | "super_admin";

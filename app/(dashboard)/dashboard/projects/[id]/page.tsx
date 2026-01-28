@@ -28,10 +28,12 @@ import { ShareDialog } from "@/components/project/share-dialog";
 import { ProjectChartSection } from "@/components/project/project-chart-section";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { MotleyContainer } from "@/components/motley";
+import { ReassignOrgSelect } from "@/components/project/reassign-org-select";
 
 interface Project {
   id: string;
   name: string;
+  organization_id: string;
   status: "active" | "completed" | "archived";
   start_date: string | null;
   end_date: string | null;
@@ -366,6 +368,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           <Progress value={fillRate} className="h-2 bg-gray-100" />
         </div>
       </div>
+
+      {/* Super Admin: Reassign Organization */}
+      <ReassignOrgSelect
+        projectId={id}
+        currentOrgId={project.organization_id}
+        onReassigned={loadProjectData}
+      />
 
       {/* Ticket sales chart by stop */}
       {stops.length > 0 && (

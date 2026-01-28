@@ -97,14 +97,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get organization (the active org)
-    const { data: orgMember } = await supabase
-      .from("organization_members")
-      .select("organization_id")
-      .limit(1)
+    // Get organization - default to "Crue" organization
+    // First try to find the Crue organization
+    const { data: crueOrg } = await supabase
+      .from("organizations")
+      .select("id")
+      .eq("name", "Crue")
       .single();
 
-    const orgId = orgMember?.organization_id;
+    let orgId = crueOrg?.id;
+
+    // If no Crue org, fall back to first available organization
+    if (!orgId) {
+      const { data: orgMember } = await supabase
+        .from("organization_members")
+        .select("organization_id")
+        .limit(1)
+        .single();
+
+      orgId = orgMember?.organization_id;
+    }
 
     if (!orgId) {
       return NextResponse.json(

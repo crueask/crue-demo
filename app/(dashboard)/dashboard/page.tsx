@@ -32,86 +32,48 @@ async function getDashboardData() {
   console.log(`[PERF] Auth: ${Date.now() - t0}ms`);
   if (!user) return null;
 
-  // Use admin client for data queries (bypasses RLS)
+  // Calculate date range for chart (14 days ending yesterday)
+  const bucketDates: string[] = [];
+  for (let i = 0; i < 14; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - 1 - (13 - i));
+    bucketDates.push(date.toISOString().split('T')[0]);
+  }
+  const startDate = bucketDates[0];
+  const endDate = bucketDates[bucketDates.length - 1];
+
+  // Use admin client for single RPC call (bypasses RLS)
   const adminClient = createAdminClient();
 
-  // Fetch membership and project memberships IN PARALLEL
-  const [membershipResult, projectMembershipsResult] = await Promise.all([
-    adminClient
-      .from("organization_members")
-      .select("organization_id")
-      .eq("user_id", user.id)
-      .single(),
-    adminClient
-      .from("project_members")
-      .select("project_id")
-      .eq("user_id", user.id)
-  ]);
+  // ONE database call gets everything!
+  const { data: dashboardData, error } = await adminClient.rpc("get_dashboard_data", {
+    p_user_id: user.id,
+    p_start_date: startDate,
+    p_end_date: endDate,
+  });
+  console.log(`[PERF] All data (single RPC): ${Date.now() - t0}ms`);
 
-  console.log(`[PERF] Memberships: ${Date.now() - t0}ms`);
-  const membership = membershipResult.data;
-  const projectMemberships = projectMembershipsResult.data;
-
-  const directProjectIds = projectMemberships?.map(pm => pm.project_id) || [];
-
-  // Fetch org projects AND direct projects IN PARALLEL
-  const [orgProjectsResult, directProjectsResult] = await Promise.all([
-    membership
-      ? adminClient
-          .from("projects")
-          .select("*")
-          .eq("organization_id", membership.organization_id)
-          .order("created_at", { ascending: false })
-      : Promise.resolve({ data: [] }),
-    directProjectIds.length > 0
-      ? adminClient.from("projects").select("*").in("id", directProjectIds)
-      : Promise.resolve({ data: [] })
-  ]);
-
-  console.log(`[PERF] Projects: ${Date.now() - t0}ms`);
-
-  // Merge projects (org projects first, then add direct if not already included)
-  let projects: any[] = orgProjectsResult.data || [];
-  const existingIds = new Set(projects.map(p => p.id));
-  for (const project of directProjectsResult.data || []) {
-    if (!existingIds.has(project.id)) {
-      projects.push(project);
-    }
-  }
-
-  // If no projects from either source, return empty
-  if (!membership && directProjectIds.length === 0) {
+  if (error || !dashboardData) {
+    console.error("Dashboard data error:", error);
     return { projects: [], stats: { ticketsToday: 0, ticketsWeek: 0, revenueWeek: 0, activeProjects: 0 }, chartData: [] };
   }
+
+  const { projects, stops: allStops, shows: allShows, latestTickets, distributionRanges } = dashboardData;
 
   if (!projects || projects.length === 0) {
     return { projects: [], stats: { ticketsToday: 0, ticketsWeek: 0, revenueWeek: 0, activeProjects: 0 }, chartData: [] };
   }
 
-  const projectIds = projects.map(p => p.id);
-
-  // Fetch all stops for all projects in one query
-  const { data: allStops } = await adminClient
-    .from("stops")
-    .select("id, project_id, capacity")
-    .in("project_id", projectIds);
-  console.log(`[PERF] Stops: ${Date.now() - t0}ms`);
-
-  const stopsByProject: Record<string, typeof allStops> = {};
+  // Build lookup maps from the single response
+  const stopsByProject: Record<string, any[]> = {};
   const allStopIds: string[] = [];
   for (const stop of allStops || []) {
     if (!stopsByProject[stop.project_id]) {
       stopsByProject[stop.project_id] = [];
     }
-    stopsByProject[stop.project_id]!.push(stop);
+    stopsByProject[stop.project_id].push(stop);
     allStopIds.push(stop.id);
   }
-
-  // Fetch all shows for all stops in one query (including sales_start_date for distribution and date for upcoming check)
-  const { data: allShows } = allStopIds.length > 0
-    ? await adminClient.from("shows").select("id, stop_id, capacity, sales_start_date, date").in("stop_id", allStopIds)
-    : { data: [] };
-  console.log(`[PERF] Shows: ${Date.now() - t0}ms`);
 
   const showsByStop: Record<string, Array<{ id: string; stop_id: string; capacity: number; sales_start_date: string | null; date: string }>> = {};
   const allShowIds: string[] = [];
@@ -128,34 +90,7 @@ async function getDashboardData() {
   // Today's date for determining upcoming shows
   const today = new Date().toISOString().split('T')[0];
 
-  // Calculate date range for chart (14 days ending yesterday)
-  const bucketDates: string[] = [];
-  for (let i = 0; i < 14; i++) {
-    const date = new Date();
-    date.setDate(date.getDate() - 1 - (13 - i));
-    bucketDates.push(date.toISOString().split('T')[0]);
-  }
-  const startDate = bucketDates[0];
-  const endDate = bucketDates[bucketDates.length - 1];
-
-  // Fetch distribution ranges AND latest tickets IN PARALLEL
-  const [distributionRangesResult, latestTicketsResult] = allShowIds.length > 0
-    ? await Promise.all([
-        adminClient
-          .from("ticket_distribution_ranges")
-          .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
-          .in("show_id", allShowIds)
-          .lte("start_date", endDate)
-          .gte("end_date", startDate),
-        adminClient.rpc("get_latest_tickets_for_shows", { show_ids: allShowIds })
-      ])
-    : [{ data: [] }, { data: [] }];
-  console.log(`[PERF] Ranges+Tickets: ${Date.now() - t0}ms`);
-
-  const distributionRanges = distributionRangesResult.data;
-  const latestTickets = latestTicketsResult.data;
-
-  // Build lookup map from function results
+  // Build lookup map from latest tickets
   const latestTicketByShow: Record<string, { quantity_sold: number; revenue: number }> = {};
   for (const ticket of latestTickets || []) {
     latestTicketByShow[ticket.show_id] = {

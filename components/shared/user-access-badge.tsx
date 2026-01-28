@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 
-type RoleType = "viewer" | "editor" | "admin" | "super_admin";
+type RoleType = "viewer" | "editor" | "admin" | "super_admin" | "member" | "user";
 
 interface UserAccessBadgeProps {
   role: RoleType;
@@ -30,6 +30,16 @@ const roleConfig: Record<RoleType, { label: string; description: string; classNa
     label: "AAA",
     description: "Superbruker",
     className: "bg-purple-100 text-purple-800 border-purple-200",
+  },
+  member: {
+    label: "Medlem",
+    description: "Organisasjonsmedlem",
+    className: "bg-gray-100 text-gray-800 border-gray-200",
+  },
+  user: {
+    label: "Bruker",
+    description: "Standard bruker",
+    className: "bg-gray-100 text-gray-800 border-gray-200",
   },
 };
 
