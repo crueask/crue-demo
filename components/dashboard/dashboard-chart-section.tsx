@@ -190,20 +190,21 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     setChartData(formattedData);
     console.log(`[Client] Total processing: ${Math.round(performance.now() - t1)}ms`);
 
-    // Fetch ad spend if enabled (uses regular client - ad_spend table has simpler RLS)
+    // Show chart immediately - don't wait for ad spend
+    setLoading(false);
+
+    // Fetch ad spend in background if enabled
     if (prefs.showAdSpend) {
       const supabase = createClient();
-      const adSpend = await getTotalAdSpend(supabase, projectIds, startDate, endDate);
-      // Apply MVA if needed
-      const adjustedSpend = Object.fromEntries(
-        Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, prefs.includeMva)])
-      );
-      setAdSpendData(adjustedSpend);
+      getTotalAdSpend(supabase, projectIds, startDate, endDate).then(adSpend => {
+        const adjustedSpend = Object.fromEntries(
+          Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, prefs.includeMva)])
+        );
+        setAdSpendData(adjustedSpend);
+      });
     } else {
       setAdSpendData({});
     }
-
-    setLoading(false);
   }, [projects, prefs, selectedEntities]);
 
   // Only fetch if user ACTIVELY changed settings (not on initial load)
