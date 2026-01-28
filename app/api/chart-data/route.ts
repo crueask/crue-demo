@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { startDate, endDate } = body;
+    const { startDate, endDate, includeAdSpend } = body;
 
     if (!startDate || !endDate) {
       return NextResponse.json({ error: "startDate and endDate required" }, { status: 400 });
@@ -61,10 +61,64 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Fetch ad spend if requested (using admin client - no slow RLS!)
+    let adSpendData: Record<string, number> = {};
+    if (includeAdSpend && stops && stops.length > 0) {
+      const stopIds = stops.map((s: any) => s.id);
+
+      // Get ad connections for these stops
+      const { data: connections } = await adminClient
+        .from("stop_ad_connections")
+        .select("stop_id, connection_type, source, campaign, adset_id, allocation_percent")
+        .in("stop_id", stopIds);
+
+      if (connections && connections.length > 0) {
+        // Build unique queries
+        const campaignQueries = new Set<string>();
+        const adsetQueries = new Set<string>();
+
+        for (const conn of connections) {
+          if (conn.connection_type === "adset" && conn.adset_id) {
+            adsetQueries.add(`${conn.source}:${conn.campaign}:${conn.adset_id}`);
+          } else {
+            campaignQueries.add(`${conn.source}:${conn.campaign}`);
+          }
+        }
+
+        // Fetch ad data
+        const { data: adData } = await adminClient
+          .from("ad_data")
+          .select("date, source, campaign, adset_id, spend")
+          .gte("date", startDate)
+          .lte("date", endDate);
+
+        if (adData) {
+          // Calculate spend per date
+          for (const conn of connections) {
+            const matchingAds = adData.filter(ad => {
+              if (conn.connection_type === "adset" && conn.adset_id) {
+                return ad.source === conn.source &&
+                       ad.campaign === conn.campaign &&
+                       ad.adset_id === conn.adset_id;
+              }
+              return ad.source === conn.source && ad.campaign === conn.campaign;
+            });
+
+            for (const ad of matchingAds) {
+              const allocatedSpend = ad.spend * (conn.allocation_percent / 100);
+              adSpendData[ad.date] = (adSpendData[ad.date] || 0) + allocatedSpend;
+            }
+          }
+        }
+      }
+      console.log(`[API chart-data] Ad spend: ${Date.now() - t0}ms`);
+    }
+
     console.log(`[API chart-data] Total: ${Date.now() - t0}ms`);
     return NextResponse.json({
       distributionRanges: distributionRanges || [],
       showToProject,
+      adSpendData: includeAdSpend ? adSpendData : undefined,
     });
   } catch (error) {
     console.error("Chart data API error:", error);

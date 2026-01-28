@@ -82,15 +82,14 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
       prefs.customEndDate
     );
 
-    const projectIds = projects.map(p => p.id);
     setLoading(true);
 
     const t0 = performance.now();
-    // Use server API with single database call
+    // Use server API with single database call (includes ad spend if enabled)
     const response = await fetch("/api/chart-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ startDate, endDate }),
+      body: JSON.stringify({ startDate, endDate, includeAdSpend: prefs.showAdSpend }),
     });
     console.log(`[Client] API fetch: ${Math.round(performance.now() - t0)}ms`);
 
@@ -100,7 +99,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
       return;
     }
 
-    const { distributionRanges, showToProject } = await response.json();
+    const { distributionRanges, showToProject, adSpendData: serverAdSpend } = await response.json();
     console.log(`[Client] Got ${distributionRanges?.length || 0} ranges`);
 
     const t1 = performance.now();
@@ -190,21 +189,17 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     setChartData(formattedData);
     console.log(`[Client] Total processing: ${Math.round(performance.now() - t1)}ms`);
 
-    // Show chart immediately - don't wait for ad spend
-    setLoading(false);
-
-    // Fetch ad spend in background if enabled
-    if (prefs.showAdSpend) {
-      const supabase = createClient();
-      getTotalAdSpend(supabase, projectIds, startDate, endDate).then(adSpend => {
-        const adjustedSpend = Object.fromEntries(
-          Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, prefs.includeMva)])
-        );
-        setAdSpendData(adjustedSpend);
-      });
+    // Set ad spend from server response (already fetched with admin client)
+    if (prefs.showAdSpend && serverAdSpend) {
+      const adjustedSpend = Object.fromEntries(
+        Object.entries(serverAdSpend).map(([date, amount]) => [date, applyMva(amount as number, prefs.includeMva)])
+      );
+      setAdSpendData(adjustedSpend);
     } else {
       setAdSpendData({});
     }
+
+    setLoading(false);
   }, [projects, prefs, selectedEntities]);
 
   // Only fetch if user ACTIVELY changed settings (not on initial load)
