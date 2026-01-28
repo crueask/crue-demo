@@ -24,9 +24,12 @@ interface ProjectWithStats {
 }
 
 async function getDashboardData() {
+  const t0 = Date.now();
+
   // Use regular client to get authenticated user
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  console.log(`[PERF] Auth: ${Date.now() - t0}ms`);
   if (!user) return null;
 
   // Use admin client for data queries (bypasses RLS)
@@ -45,35 +48,34 @@ async function getDashboardData() {
       .eq("user_id", user.id)
   ]);
 
+  console.log(`[PERF] Memberships: ${Date.now() - t0}ms`);
   const membership = membershipResult.data;
   const projectMemberships = projectMembershipsResult.data;
 
   const directProjectIds = projectMemberships?.map(pm => pm.project_id) || [];
 
-  // Fetch projects from organization (if member) and direct project memberships
-  let projects: any[] = [];
+  // Fetch org projects AND direct projects IN PARALLEL
+  const [orgProjectsResult, directProjectsResult] = await Promise.all([
+    membership
+      ? adminClient
+          .from("projects")
+          .select("*")
+          .eq("organization_id", membership.organization_id)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] }),
+    directProjectIds.length > 0
+      ? adminClient.from("projects").select("*").in("id", directProjectIds)
+      : Promise.resolve({ data: [] })
+  ]);
 
-  if (membership) {
-    const { data: orgProjects } = await adminClient
-      .from("projects")
-      .select("*")
-      .eq("organization_id", membership.organization_id)
-      .order("created_at", { ascending: false });
-    projects = orgProjects || [];
-  }
+  console.log(`[PERF] Projects: ${Date.now() - t0}ms`);
 
-  // Add directly invited projects (if not already included)
-  if (directProjectIds.length > 0) {
-    const existingIds = new Set(projects.map(p => p.id));
-    const { data: directProjects } = await adminClient
-      .from("projects")
-      .select("*")
-      .in("id", directProjectIds);
-
-    for (const project of directProjects || []) {
-      if (!existingIds.has(project.id)) {
-        projects.push(project);
-      }
+  // Merge projects (org projects first, then add direct if not already included)
+  let projects: any[] = orgProjectsResult.data || [];
+  const existingIds = new Set(projects.map(p => p.id));
+  for (const project of directProjectsResult.data || []) {
+    if (!existingIds.has(project.id)) {
+      projects.push(project);
     }
   }
 
@@ -93,6 +95,7 @@ async function getDashboardData() {
     .from("stops")
     .select("id, project_id, capacity")
     .in("project_id", projectIds);
+  console.log(`[PERF] Stops: ${Date.now() - t0}ms`);
 
   const stopsByProject: Record<string, typeof allStops> = {};
   const allStopIds: string[] = [];
@@ -108,6 +111,7 @@ async function getDashboardData() {
   const { data: allShows } = allStopIds.length > 0
     ? await adminClient.from("shows").select("id, stop_id, capacity, sales_start_date, date").in("stop_id", allStopIds)
     : { data: [] };
+  console.log(`[PERF] Shows: ${Date.now() - t0}ms`);
 
   const showsByStop: Record<string, Array<{ id: string; stop_id: string; capacity: number; sales_start_date: string | null; date: string }>> = {};
   const allShowIds: string[] = [];
@@ -146,6 +150,7 @@ async function getDashboardData() {
         adminClient.rpc("get_latest_tickets_for_shows", { show_ids: allShowIds })
       ])
     : [{ data: [] }, { data: [] }];
+  console.log(`[PERF] Ranges+Tickets: ${Date.now() - t0}ms`);
 
   const distributionRanges = distributionRangesResult.data;
   const latestTickets = latestTicketsResult.data;
@@ -284,6 +289,7 @@ async function getDashboardData() {
     }
   }
 
+  console.log(`[PERF] Total getDashboardData: ${Date.now() - t0}ms`);
   return {
     projects: projectsWithStats,
     stats: {
