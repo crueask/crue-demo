@@ -103,6 +103,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     const { distributionRanges, showToProject } = await response.json();
     console.log(`[Client] Got ${distributionRanges?.length || 0} ranges`);
 
+    const t1 = performance.now();
     // Determine if we're showing revenue or tickets
     const isRevenue = prefs.metric === 'revenue_daily' || prefs.metric === 'revenue_cumulative';
 
@@ -114,6 +115,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
       endDate,
       prefs.distributionWeight
     );
+    console.log(`[Client] expandDistributionRanges: ${Math.round(performance.now() - t1)}ms, ${distributedItems.length} items`);
 
     // Map to use appropriate value (tickets or revenue) based on metric
     interface DistributedItem {
@@ -153,6 +155,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
         }
       }
     }
+    console.log(`[Client] Chart data built: ${Math.round(performance.now() - t1)}ms`);
 
     // Convert to chart format
     let formattedData: ChartDataPoint[] = Object.entries(chartDataByDate)
@@ -185,6 +188,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     }
 
     setChartData(formattedData);
+    console.log(`[Client] Total processing: ${Math.round(performance.now() - t1)}ms`);
 
     // Fetch ad spend if enabled (uses regular client - ad_spend table has simpler RLS)
     if (prefs.showAdSpend) {
