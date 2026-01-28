@@ -3,7 +3,7 @@
  * Sends individual webhooks for each matched show
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import type {
   ParsedTixlyShow,
   MatchResult,
@@ -32,7 +32,7 @@ export function buildWebhookPayload(
   ticketReportId: string | null = null
 ): ZapierTixlyWebhook {
   return {
-    webhook_id: uuidv4(),
+    webhook_id: randomUUID(),
     report_id: reportId,
     timestamp: new Date().toISOString(),
 
