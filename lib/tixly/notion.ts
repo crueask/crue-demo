@@ -202,45 +202,30 @@ export async function fetchNotionShows(
   }
 
   try {
-    // Build filter for date range
-    const filter: Record<string, unknown> = {};
-
-    if (dateRange) {
-      // Find the date property name - we'll try common ones
-      // Note: This is a simplified filter; in production you'd want to
-      // dynamically find the date property name
-      filter.and = [
-        {
-          property: 'Date',
-          date: {
-            on_or_after: dateRange.minDate,
-          },
-        },
-        {
-          property: 'Date',
-          date: {
-            on_or_before: dateRange.maxDate,
-          },
-        },
-      ];
-    }
-
     const shows: NotionShow[] = [];
     let cursor: string | undefined;
 
     do {
+      // Query without filter - we'll filter client-side if needed
+      // This avoids type issues with Notion's complex filter types
       const response = await notion.databases.query({
         database_id: databaseId,
         start_cursor: cursor,
         page_size: 100,
-        ...(dateRange ? { filter } : {}),
       });
 
       for (const page of response.results) {
         if (page.object === 'page') {
           const show = mapNotionPageToShow(page as Record<string, unknown>);
           if (show) {
-            shows.push(show);
+            // Client-side date filtering if dateRange provided
+            if (dateRange) {
+              if (show.date >= dateRange.minDate && show.date <= dateRange.maxDate) {
+                shows.push(show);
+              }
+            } else {
+              shows.push(show);
+            }
           }
         }
       }
@@ -251,13 +236,6 @@ export async function fetchNotionShows(
     return shows;
   } catch (error) {
     console.error('Error fetching Notion shows:', error);
-
-    // If filter failed (wrong property name), try without filter
-    if (dateRange) {
-      console.warn('Retrying without date filter...');
-      return fetchNotionShows(databaseId);
-    }
-
     return [];
   }
 }
