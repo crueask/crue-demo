@@ -227,6 +227,7 @@ export async function POST(request: NextRequest) {
     let notionShows: Awaited<ReturnType<typeof fetchNotionShows>> = [];
 
     if (NOTION_DATABASE_ID) {
+      console.log(`[Tixly] Fetching Notion shows for date range: ${JSON.stringify(dateRange)}`);
       notionShows = await fetchNotionShows(
         NOTION_DATABASE_ID,
         dateRange ? {
@@ -234,6 +235,13 @@ export async function POST(request: NextRequest) {
           maxDate: dateRange.maxDate,
         } : undefined
       );
+      console.log(`[Tixly] Got ${notionShows.length} Notion shows to match against`);
+      if (notionShows.length > 0) {
+        console.log(`[Tixly] First 3 Notion shows:`, notionShows.slice(0, 3).map(s => `"${s.name}" ${s.date}`));
+      }
+      if (parsed.shows.length > 0) {
+        console.log(`[Tixly] First 3 parsed Tixly shows:`, parsed.shows.slice(0, 3).map(s => `"${s.cleanName}" ${s.date}`));
+      }
     } else {
       console.warn('NOTION_SHOWS_DATABASE_ID not set, skipping Notion matching');
     }

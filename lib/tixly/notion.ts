@@ -100,18 +100,29 @@ function extractNumber(property: unknown): number | null {
  * Map a Notion page to our NotionShow interface
  * Handles common property naming conventions
  */
-function mapNotionPageToShow(page: Record<string, unknown>): NotionShow | null {
+function mapNotionPageToShow(page: Record<string, unknown>, logFirst: boolean = false): NotionShow | null {
   const properties = page.properties as Record<string, unknown>;
   if (!properties) {
+    console.log('[Notion] Page has no properties');
     return null;
   }
 
+  // Log all property names and types for the first page to help debug
+  if (logFirst) {
+    const propSummary: Record<string, string> = {};
+    for (const [key, value] of Object.entries(properties)) {
+      const prop = value as { type?: string };
+      propSummary[key] = prop.type || 'unknown';
+    }
+    console.log('[Notion] Database property names and types:', JSON.stringify(propSummary, null, 2));
+  }
+
   // Try common property names for each field
-  const nameKeys = ['Name', 'name', 'Title', 'title', 'Show', 'show', 'Event', 'event'];
-  const dateKeys = ['Date', 'date', 'Show Date', 'show_date', 'Event Date', 'event_date', 'Dato'];
-  const timeKeys = ['Time', 'time', 'Show Time', 'show_time', 'Start Time', 'start_time'];
-  const venueKeys = ['Venue', 'venue', 'Location', 'location', 'Place', 'place', 'Sted'];
-  const capacityKeys = ['Capacity', 'capacity', 'Seats', 'seats', 'Max Attendees'];
+  const nameKeys = ['Name', 'name', 'Title', 'title', 'Show', 'show', 'Event', 'event', 'Navn', 'navn', 'Arrangement', 'arrangement'];
+  const dateKeys = ['Date', 'date', 'Show Date', 'show_date', 'Event Date', 'event_date', 'Dato', 'dato', 'Start', 'start', 'Vis dato'];
+  const timeKeys = ['Time', 'time', 'Show Time', 'show_time', 'Start Time', 'start_time', 'Tid', 'tid', 'Klokkeslett'];
+  const venueKeys = ['Venue', 'venue', 'Location', 'location', 'Place', 'place', 'Sted', 'sted', 'Lokale'];
+  const capacityKeys = ['Capacity', 'capacity', 'Seats', 'seats', 'Max Attendees', 'Kapasitet', 'kapasitet'];
 
   let name: string | null = null;
   let dateInfo: { date: string; time: string | null } | null = null;
@@ -119,20 +130,42 @@ function mapNotionPageToShow(page: Record<string, unknown>): NotionShow | null {
   let venue: string | null = null;
   let capacity: number | null = null;
 
-  // Find name
+  // Find name - also try any property with type 'title' as fallback
   for (const key of nameKeys) {
     if (properties[key]) {
       name = extractText(properties[key]);
       if (name) break;
     }
   }
+  // Fallback: find any property with type 'title'
+  if (!name) {
+    for (const [key, value] of Object.entries(properties)) {
+      const prop = value as { type?: string };
+      if (prop.type === 'title') {
+        name = extractText(value);
+        if (logFirst) console.log(`[Notion] Found title in property "${key}": ${name}`);
+        if (name) break;
+      }
+    }
+  }
 
-  // Find date
+  // Find date - also try any property with type 'date' as fallback
   for (const key of dateKeys) {
     if (properties[key]) {
       const prop = properties[key] as { type?: string; date?: unknown };
       if (prop.type === 'date' && prop.date) {
         dateInfo = parseNotionDate(prop.date);
+        if (dateInfo) break;
+      }
+    }
+  }
+  // Fallback: find any property with type 'date'
+  if (!dateInfo) {
+    for (const [key, value] of Object.entries(properties)) {
+      const prop = value as { type?: string; date?: unknown };
+      if (prop.type === 'date' && prop.date) {
+        dateInfo = parseNotionDate(prop.date);
+        if (logFirst) console.log(`[Notion] Found date in property "${key}": ${JSON.stringify(dateInfo)}`);
         if (dateInfo) break;
       }
     }
@@ -168,6 +201,9 @@ function mapNotionPageToShow(page: Record<string, unknown>): NotionShow | null {
 
   // Must have name and date
   if (!name || !dateInfo?.date) {
+    if (logFirst) {
+      console.log(`[Notion] Skipping page - name: ${name ? 'found' : 'MISSING'}, date: ${dateInfo?.date ? 'found' : 'MISSING'}`);
+    }
     return null;
   }
 
@@ -204,6 +240,14 @@ export async function fetchNotionShows(
   try {
     const shows: NotionShow[] = [];
     let cursor: string | undefined;
+    let totalPages = 0;
+    let mappedPages = 0;
+    let isFirstPage = true;
+
+    console.log(`[Notion] Fetching shows from database: ${databaseId}`);
+    if (dateRange) {
+      console.log(`[Notion] Date range filter: ${dateRange.minDate} to ${dateRange.maxDate}`);
+    }
 
     do {
       // Query without filter - we'll filter client-side if needed
@@ -214,10 +258,15 @@ export async function fetchNotionShows(
         page_size: 100,
       });
 
+      console.log(`[Notion] Query returned ${response.results.length} pages (has_more: ${response.has_more})`);
+
       for (const page of response.results) {
         if (page.object === 'page') {
-          const show = mapNotionPageToShow(page as Record<string, unknown>);
+          totalPages++;
+          const show = mapNotionPageToShow(page as Record<string, unknown>, isFirstPage);
+          isFirstPage = false;
           if (show) {
+            mappedPages++;
             // Client-side date filtering if dateRange provided
             if (dateRange) {
               if (show.date >= dateRange.minDate && show.date <= dateRange.maxDate) {
@@ -233,9 +282,14 @@ export async function fetchNotionShows(
       cursor = response.has_more ? response.next_cursor ?? undefined : undefined;
     } while (cursor);
 
+    console.log(`[Notion] Total pages: ${totalPages}, successfully mapped: ${mappedPages}, after date filter: ${shows.length}`);
+    if (shows.length > 0) {
+      console.log(`[Notion] Sample show: "${shows[0].name}" on ${shows[0].date} at ${shows[0].time || 'no time'}`);
+    }
+
     return shows;
   } catch (error) {
-    console.error('Error fetching Notion shows:', error);
+    console.error('[Notion] Error fetching shows:', error);
     return [];
   }
 }
