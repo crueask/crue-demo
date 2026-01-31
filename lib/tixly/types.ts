@@ -82,6 +82,7 @@ export interface MatchedTixlyShow {
 export interface ZapierTixlyWebhook {
   webhook_id: string;
   report_id: string;
+  report_date: string | null;
   timestamp: string;
 
   // Tixly report data

@@ -29,11 +29,13 @@ export function buildWebhookPayload(
   match: MatchResult,
   reportId: string,
   appShowId: string | null = null,
-  ticketReportId: string | null = null
+  ticketReportId: string | null = null,
+  reportDate: string | null = null
 ): ZapierTixlyWebhook {
   return {
     webhook_id: randomUUID(),
     report_id: reportId,
+    report_date: reportDate,
     timestamp: new Date().toISOString(),
 
     tixly: {
@@ -133,7 +135,8 @@ export async function sendZapierWebhooks(
     ticketReportId?: string | null;
   }>,
   reportId: string,
-  webhookUrl: string = DEFAULT_WEBHOOK_URL
+  webhookUrl: string = DEFAULT_WEBHOOK_URL,
+  reportDate: string | null = null
 ): Promise<WebhookSendResult[]> {
   const results: WebhookSendResult[] = [];
 
@@ -146,7 +149,8 @@ export async function sendZapierWebhooks(
       show.match,
       reportId,
       show.appShowId || null,
-      show.ticketReportId || null
+      show.ticketReportId || null,
+      reportDate
     );
 
     const result = await sendSingleWebhook(payload, webhookUrl);

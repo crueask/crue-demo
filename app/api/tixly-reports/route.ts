@@ -170,6 +170,7 @@ export async function POST(request: NextRequest) {
     // Get body - handle both plain text and JSON
     const contentType = request.headers.get('content-type') || '';
     let rawBody: string;
+    let reportDate: string | null = null;
 
     if (contentType.includes('application/json')) {
       // Zapier sends JSON - extract the body field
@@ -177,6 +178,8 @@ export async function POST(request: NextRequest) {
       // Support multiple field names that Zapier might use
       rawBody = json.body || json.data || json['Body Plain'] || json.text ||
                 (typeof json === 'string' ? json : JSON.stringify(json));
+      // Extract report date if provided
+      reportDate = json.date || json.report_date || json.received_date || null;
     } else {
       // Plain text body
       rawBody = await request.text();
@@ -315,7 +318,8 @@ export async function POST(request: NextRequest) {
     const webhookResults = await sendZapierWebhooks(
       matchedShows,
       reportId,
-      webhookUrl
+      webhookUrl,
+      reportDate
     );
 
     const successfulWebhooks = webhookResults.filter(r => r.success).length;
