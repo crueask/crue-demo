@@ -119,7 +119,7 @@ function mapNotionPageToShow(page: Record<string, unknown>, logFirst: boolean = 
 
   // Try common property names for each field
   const nameKeys = ['Name', 'name', 'Title', 'title', 'Show', 'show', 'Event', 'event', 'Navn', 'navn', 'Arrangement', 'arrangement'];
-  const dateKeys = ['Date', 'date', 'Show Date', 'show_date', 'Event Date', 'event_date', 'Dato', 'dato', 'Start', 'start', 'Vis dato'];
+  const dateKeys = ['Date', 'date', 'Show Date', 'show_date', 'Event Date', 'event_date', 'Dato', 'dato', 'Start', 'start', 'Vis dato', 'Dato og tid for show'];
   const timeKeys = ['Time', 'time', 'Show Time', 'show_time', 'Start Time', 'start_time', 'Tid', 'tid', 'Klokkeslett'];
   const venueKeys = ['Venue', 'venue', 'Location', 'location', 'Place', 'place', 'Sted', 'sted', 'Lokale'];
   const capacityKeys = ['Capacity', 'capacity', 'Seats', 'seats', 'Max Attendees', 'Kapasitet', 'kapasitet'];
