@@ -22,13 +22,19 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, MoreHorizontal, Pencil, Trash2, Share } from "lucide-react";
+import { ArrowLeft, MoreHorizontal, Pencil, Trash2, Share, Building2 } from "lucide-react";
 import { StopAccordion } from "@/components/project/stop-accordion";
 import { ShareDialog } from "@/components/project/share-dialog";
 import { ProjectChartSection } from "@/components/project/project-chart-section";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { MotleyContainer } from "@/components/motley";
-import { ReassignOrgSelect } from "@/components/project/reassign-org-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Project {
   id: string;
@@ -77,7 +83,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Edit project dialog
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editProjectName, setEditProjectName] = useState("");
+  const [editOrgId, setEditOrgId] = useState("");
   const [updating, setUpdating] = useState(false);
+
+  // Organization reassignment (super admin only)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [allOrganizations, setAllOrganizations] = useState<{ id: string; name: string }[]>([]);
 
   // Share dialog
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
@@ -85,6 +96,32 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   useEffect(() => {
     loadProjectData();
   }, [id]);
+
+  // Load super admin status and organizations
+  useEffect(() => {
+    async function loadAdminData() {
+      try {
+        const roleResponse = await fetch("/api/user/role");
+        if (roleResponse.ok) {
+          const roleData = await roleResponse.json();
+          setIsSuperAdmin(roleData.isSuperAdmin);
+
+          // Only load all orgs if super admin
+          if (roleData.isSuperAdmin) {
+            const orgsResponse = await fetch("/api/organizations/all");
+            if (orgsResponse.ok) {
+              const orgsData = await orgsResponse.json();
+              setAllOrganizations(orgsData.organizations || []);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load admin data:", error);
+      }
+    }
+
+    loadAdminData();
+  }, []);
 
   async function loadProjectData() {
     const supabase = createClient();
@@ -103,6 +140,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
     setProject(projectData);
     setEditProjectName(projectData.name);
+    setEditOrgId(projectData.organization_id);
 
     // Get stops
     const { data: stopsData } = await supabase
@@ -228,20 +266,43 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
     setUpdating(true);
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("projects")
-      .update({
-        name: editProjectName.trim(),
-      })
-      .eq("id", id);
+    try {
+      // Update project name
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("projects")
+        .update({
+          name: editProjectName.trim(),
+        })
+        .eq("id", id);
 
-    if (!error) {
+      if (error) {
+        console.error("Failed to update project:", error);
+        setUpdating(false);
+        return;
+      }
+
+      // Update organization if changed (super admin only)
+      if (isSuperAdmin && editOrgId && editOrgId !== project?.organization_id) {
+        const orgResponse = await fetch(`/api/projects/${id}/organization`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ organizationId: editOrgId }),
+        });
+
+        if (!orgResponse.ok) {
+          const data = await orgResponse.json();
+          alert(data.error || "Kunne ikke endre organisasjon");
+        }
+      }
+
       setIsEditDialogOpen(false);
       loadProjectData();
+    } catch (err) {
+      console.error("Failed to update project:", err);
+    } finally {
+      setUpdating(false);
     }
-
-    setUpdating(false);
   }
 
   async function handleDeleteProject() {
@@ -369,13 +430,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
-      {/* Super Admin: Reassign Organization */}
-      <ReassignOrgSelect
-        projectId={id}
-        currentOrgId={project.organization_id}
-        onReassigned={loadProjectData}
-      />
-
       {/* Ticket sales chart by stop */}
       {stops.length > 0 && (
         <ProjectChartSection
@@ -449,6 +503,34 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   required
                 />
               </div>
+
+              {/* Organization selector - super admin only */}
+              {isSuperAdmin && allOrganizations.length > 1 && (
+                <div className="space-y-2">
+                  <Label htmlFor="edit_org" className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4" />
+                    Organisasjon
+                  </Label>
+                  <Select
+                    value={editOrgId}
+                    onValueChange={setEditOrgId}
+                  >
+                    <SelectTrigger id="edit_org">
+                      <SelectValue placeholder="Velg organisasjon" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allOrganizations.map((org) => (
+                        <SelectItem key={org.id} value={org.id}>
+                          {org.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500">
+                    Kun synlig for super admins
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
