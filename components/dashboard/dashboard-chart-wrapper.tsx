@@ -11,6 +11,7 @@ interface Project {
 interface DashboardChartWrapperProps {
   initialProjects: Project[];
   initialChartData?: ChartDataPoint[];
+  canViewAdSpend?: boolean;
 }
 
 // Lazy load the chart component to reduce initial bundle size (Recharts is ~468KB)
@@ -28,7 +29,7 @@ const DashboardChartSection = dynamic(
   }
 );
 
-export function DashboardChartWrapper({ initialProjects, initialChartData }: DashboardChartWrapperProps) {
+export function DashboardChartWrapper({ initialProjects, initialChartData, canViewAdSpend }: DashboardChartWrapperProps) {
   if (initialProjects.length === 0) {
     return null;
   }
@@ -37,6 +38,7 @@ export function DashboardChartWrapper({ initialProjects, initialChartData }: Das
     <DashboardChartSection
       initialProjects={initialProjects}
       initialChartData={initialChartData}
+      canViewAdSpend={canViewAdSpend}
     />
   );
 }

@@ -41,9 +41,11 @@ interface Stop {
 interface ProjectChartSectionProps {
   projectId: string;
   stops: Stop[];
+  canViewAdSpend?: boolean;
+  shareSlug?: string;
 }
 
-export function ProjectChartSection({ projectId, stops }: ProjectChartSectionProps) {
+export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, shareSlug }: ProjectChartSectionProps) {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [adSpendData, setAdSpendData] = useState<Record<string, number>>({});
   const [revenueData, setRevenueData] = useState<Record<string, number>>({});
@@ -296,20 +298,46 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
     }
     setRevenueData(revenueByDateTotals);
 
-    // Fetch ad spend if enabled
-    if (prefs.showAdSpend) {
-      const adSpend = await getProjectAdSpend(supabase, projectId, startDate, endDate);
-      // Apply MVA if needed
-      const adjustedSpend = Object.fromEntries(
-        Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, prefs.includeMva)])
-      );
-      setAdSpendData(adjustedSpend);
+    // Fetch ad spend if enabled and user has permission
+    if (canViewAdSpend && prefs.showAdSpend) {
+      if (shareSlug) {
+        // On shared pages, use the server API endpoint
+        try {
+          const response = await fetch(`/api/share/${shareSlug}/ad-spend`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ startDate, endDate }),
+          });
+          if (response.ok) {
+            const { adSpendData: serverAdSpend } = await response.json();
+            if (serverAdSpend) {
+              const adjustedSpend = Object.fromEntries(
+                Object.entries(serverAdSpend).map(([date, amount]) => [date, applyMva(amount as number, prefs.includeMva)])
+              );
+              setAdSpendData(adjustedSpend);
+            } else {
+              setAdSpendData({});
+            }
+          } else {
+            setAdSpendData({});
+          }
+        } catch {
+          setAdSpendData({});
+        }
+      } else {
+        // On authenticated pages, use direct Supabase query
+        const adSpend = await getProjectAdSpend(supabase, projectId, startDate, endDate);
+        const adjustedSpend = Object.fromEntries(
+          Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, prefs.includeMva)])
+        );
+        setAdSpendData(adjustedSpend);
+      }
     } else {
       setAdSpendData({});
     }
 
     setLoading(false);
-  }, [projectId, stops, prefs, selectedEntities]);
+  }, [projectId, stops, prefs, selectedEntities, canViewAdSpend, shareSlug]);
 
   useEffect(() => {
     fetchChartData();
@@ -420,10 +448,10 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
           onShowEstimationsChange={handleShowEstimationsChange}
           distributionWeight={prefs.distributionWeight}
           onDistributionWeightChange={handleDistributionWeightChange}
-          showAdSpend={prefs.showAdSpend}
-          onShowAdSpendChange={handleShowAdSpendChange}
-          includeMva={prefs.includeMva}
-          onIncludeMvaChange={handleIncludeMvaChange}
+          showAdSpend={canViewAdSpend ? prefs.showAdSpend : undefined}
+          onShowAdSpendChange={canViewAdSpend ? handleShowAdSpendChange : undefined}
+          includeMva={canViewAdSpend ? prefs.includeMva : undefined}
+          onIncludeMvaChange={canViewAdSpend ? handleIncludeMvaChange : undefined}
         />
       </div>
 
@@ -440,9 +468,9 @@ export function ProjectChartSection({ projectId, stops }: ProjectChartSectionPro
           showEstimations={prefs.showEstimations}
           isCumulative={isCumulative}
           isRevenue={isRevenue}
-          adSpendData={prefs.showAdSpend ? adSpendData : undefined}
+          adSpendData={canViewAdSpend && prefs.showAdSpend ? adSpendData : undefined}
           includeMva={prefs.includeMva}
-          revenueData={prefs.showAdSpend ? revenueData : undefined}
+          revenueData={canViewAdSpend && prefs.showAdSpend ? revenueData : undefined}
         />
       )}
     </div>

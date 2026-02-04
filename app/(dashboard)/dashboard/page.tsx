@@ -234,6 +234,47 @@ async function getDashboardData() {
     }
   }
 
+  // Determine if user can view ad spend (Premium = org admin, super admin, or editor on any project)
+  const isSuperAdmin = user.email?.endsWith("@crue.no") || false;
+  let canViewAdSpend = isSuperAdmin;
+
+  if (!canViewAdSpend) {
+    // Check global_role
+    const { data: profile } = await adminClient
+      .from("user_profiles")
+      .select("global_role")
+      .eq("id", user.id)
+      .single();
+
+    if (profile?.global_role === "super_admin") {
+      canViewAdSpend = true;
+    }
+  }
+
+  if (!canViewAdSpend) {
+    // Check if user is org admin for any organization
+    const { data: orgMemberships } = await adminClient
+      .from("organization_members")
+      .select("role")
+      .eq("user_id", user.id);
+
+    if (orgMemberships?.some(m => m.role === "admin")) {
+      canViewAdSpend = true;
+    }
+  }
+
+  if (!canViewAdSpend) {
+    // Check if user is editor on any project
+    const { data: projectMemberships } = await adminClient
+      .from("project_members")
+      .select("role")
+      .eq("user_id", user.id);
+
+    if (projectMemberships?.some(m => m.role === "editor")) {
+      canViewAdSpend = true;
+    }
+  }
+
   console.log(`[PERF] Total getDashboardData: ${Date.now() - t0}ms`);
   return {
     projects: projectsWithStats,
@@ -244,6 +285,7 @@ async function getDashboardData() {
       activeProjects,
     },
     chartData,
+    canViewAdSpend,
   };
 }
 
@@ -316,6 +358,7 @@ export default async function DashboardPage() {
       <DashboardChartWrapper
         initialProjects={chartProjects}
         initialChartData={data?.chartData}
+        canViewAdSpend={data?.canViewAdSpend}
       />
 
       {/* Motley AI Chat */}

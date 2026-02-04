@@ -31,9 +31,10 @@ interface Project {
 interface DashboardChartSectionProps {
   initialProjects: Project[];
   initialChartData?: ChartDataPoint[];
+  canViewAdSpend?: boolean;
 }
 
-export function DashboardChartSection({ initialProjects, initialChartData }: DashboardChartSectionProps) {
+export function DashboardChartSection({ initialProjects, initialChartData, canViewAdSpend = false }: DashboardChartSectionProps) {
   const [projects] = useState<Project[]>(initialProjects);
   const [chartData, setChartData] = useState<ChartDataPoint[]>(initialChartData || []);
   const [adSpendData, setAdSpendData] = useState<Record<string, number>>({});
@@ -51,8 +52,8 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     const saved = loadChartPreferences();
     setPrefs(saved);
 
-    // If ad spend is enabled, fetch it via server API (fast, bypasses RLS)
-    if (saved.showAdSpend && projects.length > 0) {
+    // If ad spend is enabled and user has permission, fetch it via server API (fast, bypasses RLS)
+    if (canViewAdSpend && saved.showAdSpend && projects.length > 0) {
       const fetchAdSpend = async () => {
         const { startDate, endDate } = getDateRange(saved.dateRange, saved.customStartDate, saved.customEndDate);
         const response = await fetch("/api/chart-data", {
@@ -72,7 +73,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
       };
       fetchAdSpend();
     }
-  }, [projects]);
+  }, [projects, canViewAdSpend]);
 
   // Fetch chart data when settings change - uses server API to bypass slow RLS
   const fetchChartData = useCallback(async () => {
@@ -95,7 +96,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     const response = await fetch("/api/chart-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ startDate, endDate, includeAdSpend: prefs.showAdSpend }),
+      body: JSON.stringify({ startDate, endDate, includeAdSpend: canViewAdSpend && prefs.showAdSpend }),
     });
     console.log(`[Client] API fetch: ${Math.round(performance.now() - t0)}ms`);
 
@@ -197,7 +198,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
 
     // Set ad spend from server response (already fetched with admin client)
     console.log(`[Client] Ad spend from server:`, serverAdSpend ? Object.keys(serverAdSpend).length + ' days' : 'none');
-    if (prefs.showAdSpend && serverAdSpend) {
+    if (canViewAdSpend && prefs.showAdSpend && serverAdSpend) {
       const adjustedSpend = Object.fromEntries(
         Object.entries(serverAdSpend).map(([date, amount]) => [date, applyMva(amount as number, prefs.includeMva)])
       );
@@ -207,7 +208,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
     }
 
     setLoading(false);
-  }, [projects, prefs, selectedEntities]);
+  }, [projects, prefs, selectedEntities, canViewAdSpend]);
 
   // Only fetch if user ACTIVELY changed settings (not on initial load)
   useEffect(() => {
@@ -294,10 +295,10 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
           onShowEstimationsChange={handleShowEstimationsChange}
           distributionWeight={prefs.distributionWeight}
           onDistributionWeightChange={handleDistributionWeightChange}
-          showAdSpend={prefs.showAdSpend}
-          onShowAdSpendChange={handleShowAdSpendChange}
-          includeMva={prefs.includeMva}
-          onIncludeMvaChange={handleIncludeMvaChange}
+          showAdSpend={canViewAdSpend ? prefs.showAdSpend : undefined}
+          onShowAdSpendChange={canViewAdSpend ? handleShowAdSpendChange : undefined}
+          includeMva={canViewAdSpend ? prefs.includeMva : undefined}
+          onIncludeMvaChange={canViewAdSpend ? handleIncludeMvaChange : undefined}
         />
       </div>
 
@@ -314,7 +315,7 @@ export function DashboardChartSection({ initialProjects, initialChartData }: Das
           isCumulative={isCumulative}
           isRevenue={isRevenue}
           hideHeader
-          adSpendData={prefs.showAdSpend ? adSpendData : undefined}
+          adSpendData={canViewAdSpend && prefs.showAdSpend ? adSpendData : undefined}
           includeMva={prefs.includeMva}
         />
       )}

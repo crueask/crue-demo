@@ -28,9 +28,11 @@ interface SharedProjectContentProps {
   projectId: string;
   projectName: string;
   stops: Stop[];
+  shareShowAdSpend?: boolean;
+  shareSlug?: string;
 }
 
-export function SharedProjectContent({ projectId, projectName, stops }: SharedProjectContentProps) {
+export function SharedProjectContent({ projectId, projectName, stops, shareShowAdSpend = false, shareSlug }: SharedProjectContentProps) {
   // Calculate totals
   const totalShows = stops.reduce((sum, stop) => sum + stop.shows.length, 0);
   const totalTicketsSold = stops.reduce(
@@ -112,6 +114,8 @@ export function SharedProjectContent({ projectId, projectName, stops }: SharedPr
                   sales_start_date: show.sales_start_date,
                 })),
               }))}
+              canViewAdSpend={shareShowAdSpend}
+              shareSlug={shareSlug}
             />
           </div>
         )}

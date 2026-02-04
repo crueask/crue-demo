@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { UserAccessBadge } from "@/components/shared/user-access-badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Copy,
   Check,
@@ -35,6 +36,7 @@ import {
   Clock,
   RotateCw,
   Building2,
+  DollarSign,
 } from "lucide-react";
 
 interface ShareDialogProps {
@@ -89,6 +91,8 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
   const [password, setPassword] = useState("");
   const [showPasswordInput, setShowPasswordInput] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [shareShowAdSpend, setShareShowAdSpend] = useState(false);
+  const [savingAdSpendToggle, setSavingAdSpendToggle] = useState(false);
 
   // User invitation state
   const [inviteEmail, setInviteEmail] = useState("");
@@ -111,7 +115,7 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
 
     const { data } = await supabase
       .from("projects")
-      .select("share_slug, share_enabled, share_password_hash")
+      .select("share_slug, share_enabled, share_password_hash, share_show_ad_spend")
       .eq("id", projectId)
       .single();
 
@@ -119,6 +123,7 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
       setShareSlug(data.share_slug);
       setShareEnabled(data.share_enabled || false);
       setHasPassword(!!data.share_password_hash);
+      setShareShowAdSpend(data.share_show_ad_spend || false);
     }
 
     setLoading(false);
@@ -358,6 +363,21 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
     } catch (error) {
       console.error("Failed to resend invitation:", error);
     }
+  }
+
+  async function handleToggleShareAdSpend(enabled: boolean) {
+    setSavingAdSpendToggle(true);
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from("projects")
+      .update({ share_show_ad_spend: enabled })
+      .eq("id", projectId);
+
+    if (!error) {
+      setShareShowAdSpend(enabled);
+    }
+    setSavingAdSpendToggle(false);
   }
 
   function generateSlug() {
@@ -688,6 +708,26 @@ export function ShareDialog({ projectId, projectName, open, onOpenChange }: Shar
                     </div>
                   )}
                 </div>
+
+                {/* Ad spend visibility toggle - only for users who can manage */}
+                {canManage && (
+                  <div className="pt-4 border-t">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-4 w-4 text-gray-400" />
+                        <div>
+                          <span className="text-sm font-medium">Vis annonsekostnad</span>
+                          <p className="text-xs text-gray-500">Inkluder annonsekostnad i delt visning</p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={shareShowAdSpend}
+                        onCheckedChange={handleToggleShareAdSpend}
+                        disabled={savingAdSpendToggle}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div className="pt-4 border-t">
                   <Button

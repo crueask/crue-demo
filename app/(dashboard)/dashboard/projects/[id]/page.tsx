@@ -88,6 +88,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   // Organization reassignment (super admin only)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [canViewAdSpend, setCanViewAdSpend] = useState(false);
   const [allOrganizations, setAllOrganizations] = useState<{ id: string; name: string }[]>([]);
 
   // Share dialog
@@ -97,7 +98,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     loadProjectData();
   }, [id]);
 
-  // Load super admin status and organizations
+  // Load super admin status, organizations, and Premium status for ad spend
   useEffect(() => {
     async function loadAdminData() {
       try {
@@ -106,12 +107,50 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           const roleData = await roleResponse.json();
           setIsSuperAdmin(roleData.isSuperAdmin);
 
-          // Only load all orgs if super admin
+          // Super admins can always view ad spend
           if (roleData.isSuperAdmin) {
+            setCanViewAdSpend(true);
             const orgsResponse = await fetch("/api/organizations/all");
             if (orgsResponse.ok) {
               const orgsData = await orgsResponse.json();
               setAllOrganizations(orgsData.organizations || []);
+            }
+          } else {
+            // Check if user is org admin or project editor (Premium)
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              // Check project membership (editor = Premium)
+              const { data: projectMember } = await supabase
+                .from("project_members")
+                .select("role")
+                .eq("project_id", id)
+                .eq("user_id", user.id)
+                .single();
+
+              if (projectMember?.role === "editor") {
+                setCanViewAdSpend(true);
+              } else {
+                // Check org membership (admin = Premium)
+                const { data: projectData } = await supabase
+                  .from("projects")
+                  .select("organization_id")
+                  .eq("id", id)
+                  .single();
+
+                if (projectData) {
+                  const { data: orgMember } = await supabase
+                    .from("organization_members")
+                    .select("role")
+                    .eq("organization_id", projectData.organization_id)
+                    .eq("user_id", user.id)
+                    .single();
+
+                  if (orgMember?.role === "admin") {
+                    setCanViewAdSpend(true);
+                  }
+                }
+              }
             }
           }
         }
@@ -121,7 +160,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
 
     loadAdminData();
-  }, []);
+  }, [id]);
 
   async function loadProjectData() {
     const supabase = createClient();
@@ -444,6 +483,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               sales_start_date: show.sales_start_date,
             })),
           }))}
+          canViewAdSpend={canViewAdSpend}
         />
       )}
 

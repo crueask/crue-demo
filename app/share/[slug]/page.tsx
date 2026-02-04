@@ -193,7 +193,13 @@ export default async function SharedProjectPage({
       projectName={project.name}
       hasPassword={hasPassword}
     >
-      <SharedProjectContent projectId={project.id} projectName={project.name} stops={stops} />
+      <SharedProjectContent
+        projectId={project.id}
+        projectName={project.name}
+        stops={stops}
+        shareShowAdSpend={project.share_show_ad_spend || false}
+        shareSlug={slug}
+      />
     </SharePageWrapper>
   );
 }
