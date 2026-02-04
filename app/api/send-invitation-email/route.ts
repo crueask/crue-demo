@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -29,6 +27,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const resend = new Resend(process.env.RESEND_API_KEY);
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://crue.no";
     const roleLabel = role === "viewer" ? "Lesetilgang (GA)" : "Redigeringstilgang (Premium)";
 

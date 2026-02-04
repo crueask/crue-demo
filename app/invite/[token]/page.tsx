@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserAccessBadge } from "@/components/shared/user-access-badge";
@@ -40,6 +41,13 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
         }
 
         setInvitation(data);
+
+        // Check if user is authenticated upfront
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setNotAuthenticated(true);
+        }
       } catch (err) {
         setError("Kunne ikke laste invitasjon");
       } finally {

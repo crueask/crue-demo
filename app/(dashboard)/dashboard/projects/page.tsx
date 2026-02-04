@@ -32,23 +32,15 @@ export default function ProjectsPage() {
   async function loadProjects() {
     const supabase = createClient();
 
-    // Get user's organization
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: membership } = await supabase
-      .from("organization_members")
-      .select("organization_id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (!membership) return;
-
-    // Get projects with counts
+    // Get all projects the user has access to (RLS handles filtering
+    // via user_accessible_project_ids which includes both org membership
+    // and direct project membership)
     const { data: projectsData } = await supabase
       .from("projects")
       .select("*")
-      .eq("organization_id", membership.organization_id)
       .order("created_at", { ascending: false });
 
     if (projectsData) {

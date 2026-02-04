@@ -41,18 +41,29 @@ export async function updateSession(request: NextRequest) {
   const isPublicPage =
     request.nextUrl.pathname === "/" ||
     request.nextUrl.pathname.startsWith("/share/");
+  const isInvitePage =
+    request.nextUrl.pathname.startsWith("/invite/") ||
+    request.nextUrl.pathname.startsWith("/org-invite/");
   const isDashboardPage =
-    !isAuthPage && !isPublicPage && !request.nextUrl.pathname.startsWith("/api");
+    !isAuthPage && !isPublicPage && !isInvitePage && !request.nextUrl.pathname.startsWith("/api");
 
   if (!user && isDashboardPage) {
     const url = request.nextUrl.clone();
+    const redirectPath = request.nextUrl.pathname + request.nextUrl.search;
     url.pathname = "/login";
+    url.searchParams.set("redirect", redirectPath);
     return NextResponse.redirect(url);
   }
 
   if (user && isAuthPage) {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    const redirect = request.nextUrl.searchParams.get("redirect");
+    if (redirect && redirect.startsWith("/") && !redirect.startsWith("//")) {
+      url.pathname = redirect;
+      url.search = "";
+    } else {
+      url.pathname = "/dashboard";
+    }
     return NextResponse.redirect(url);
   }
 

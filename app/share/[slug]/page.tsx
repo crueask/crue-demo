@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 import { SharePageWrapper } from "@/components/share/share-page-wrapper";
@@ -8,6 +9,22 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const { data: project } = await supabase
+    .from("projects")
+    .select("name")
+    .eq("share_slug", slug)
+    .eq("share_enabled", true)
+    .single();
+
+  return { title: project?.name ?? "Delt prosjekt" };
+}
 
 interface Show {
   id: string;

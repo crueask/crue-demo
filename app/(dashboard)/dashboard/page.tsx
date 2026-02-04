@@ -8,6 +8,10 @@ import {
 } from "@/lib/chart-utils";
 import { MotleyContainer } from "@/components/motley";
 
+export const metadata = {
+  title: "Oversikt",
+};
+
 // Force dynamic rendering - don't cache this page
 // New reports are submitted via API and need to appear immediately
 export const dynamic = 'force-dynamic';
