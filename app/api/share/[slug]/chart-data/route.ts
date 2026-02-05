@@ -10,11 +10,15 @@ export async function POST(
     const body = await request.json();
     const { showIds, startDate, endDate } = body;
 
+    console.log("[chart-data] Request received:", { slug, showIdsCount: showIds?.length, startDate, endDate });
+
     if (!showIds || !Array.isArray(showIds) || showIds.length === 0) {
+      console.log("[chart-data] Error: showIds array required");
       return NextResponse.json({ error: "showIds array required" }, { status: 400 });
     }
 
     if (!startDate || !endDate) {
+      console.log("[chart-data] Error: dates required");
       return NextResponse.json({ error: "startDate and endDate required" }, { status: 400 });
     }
 
@@ -73,8 +77,10 @@ export async function POST(
       .gte("end_date", startDate);
 
     if (rangesError) {
-      console.error("Error fetching distribution ranges:", rangesError);
+      console.error("[chart-data] Error fetching distribution ranges:", rangesError);
     }
+
+    console.log("[chart-data] Returning", distributionRanges?.length || 0, "distribution ranges");
 
     return NextResponse.json({ distributionRanges: distributionRanges || [] });
   } catch (error) {
