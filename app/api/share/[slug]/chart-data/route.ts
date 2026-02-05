@@ -65,12 +65,16 @@ export async function POST(
     }
 
     // Fetch distribution ranges for authorized shows
-    const { data: distributionRanges } = await adminClient
+    const { data: distributionRanges, error: rangesError } = await adminClient
       .from("ticket_distribution_ranges")
       .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
       .in("show_id", authorizedShowIds)
       .lte("start_date", endDate)
       .gte("end_date", startDate);
+
+    if (rangesError) {
+      console.error("Error fetching distribution ranges:", rangesError);
+    }
 
     return NextResponse.json({ distributionRanges: distributionRanges || [] });
   } catch (error) {

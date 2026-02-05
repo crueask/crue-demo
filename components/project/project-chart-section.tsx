@@ -131,8 +131,12 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
           if (response.ok) {
             const result = await response.json();
             distributionRanges = result.distributionRanges;
+          } else {
+            console.error("Share chart data API returned error:", response.status);
+            distributionRanges = [];
           }
-        } catch {
+        } catch (err) {
+          console.error("Share chart data fetch failed:", err);
           distributionRanges = [];
         }
       } else {
