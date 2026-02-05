@@ -125,6 +125,7 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
       if (shareSlug) {
         // On shared pages, use the server API endpoint to bypass RLS
         try {
+          console.log("[ProjectChartSection] Fetching chart data via API", { shareSlug, showIdsCount: allShowIds.length, startDate, endDate });
           const response = await fetch(`/api/share/${shareSlug}/chart-data`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -133,6 +134,7 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
           if (response.ok) {
             const result = await response.json();
             distributionRanges = result.distributionRanges;
+            console.log("[ProjectChartSection] API returned", distributionRanges?.length || 0, "distribution ranges");
           } else {
             console.error("Share chart data API returned error:", response.status);
             distributionRanges = [];
