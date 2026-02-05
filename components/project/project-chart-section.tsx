@@ -77,8 +77,9 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
 
     setLoading(true);
 
-    // Only create Supabase client if we need it (not on share pages)
-    const supabase = shareSlug ? null : createClient();
+    // Always create Supabase client - we need it for both share pages and authenticated pages
+    // On share pages, RLS policies allow public access to shared project data
+    const supabase = createClient();
 
     const { startDate, endDate } = getDateRange(
       prefs.dateRange,
@@ -128,36 +129,20 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
     }> | null = null;
 
     if (allShowIds.length > 0) {
-      if (shareSlug) {
-        // On shared pages, use the server API endpoint to bypass RLS
-        try {
-          console.log("[ProjectChartSection] Fetching chart data via API", { shareSlug, showIdsCount: allShowIds.length, startDate, endDate });
-          const response = await fetch(`/api/share/${shareSlug}/chart-data`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ showIds: allShowIds, startDate, endDate }),
-          });
-          if (response.ok) {
-            const result = await response.json();
-            distributionRanges = result.distributionRanges;
-            console.log("[ProjectChartSection] API returned", distributionRanges?.length || 0, "distribution ranges");
-          } else {
-            console.error("Share chart data API returned error:", response.status);
-            distributionRanges = [];
-          }
-        } catch (err) {
-          console.error("Share chart data fetch failed:", err);
-          distributionRanges = [];
-        }
-      } else if (supabase) {
-        // On authenticated pages, use direct Supabase query
-        const { data } = await supabase
-          .from("ticket_distribution_ranges")
-          .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
-          .in("show_id", allShowIds)
-          .lte("start_date", endDate)
-          .gte("end_date", startDate);
+      // Query ticket_distribution_ranges directly - RLS policies allow public access for shared projects
+      const { data, error } = await supabase
+        .from("ticket_distribution_ranges")
+        .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
+        .in("show_id", allShowIds)
+        .lte("start_date", endDate)
+        .gte("end_date", startDate);
+
+      if (error) {
+        console.error("[ProjectChartSection] Error fetching distribution ranges:", error);
+        distributionRanges = [];
+      } else {
         distributionRanges = data;
+        console.log("[ProjectChartSection] Fetched", data?.length || 0, "distribution ranges");
       }
     } else {
       distributionRanges = [];
@@ -368,15 +353,13 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
         } catch {
           setAdSpendData({});
         }
-      } else if (supabase) {
+      } else {
         // On authenticated pages, use direct Supabase query
         const adSpend = await getProjectAdSpend(supabase, projectId, startDate, endDate);
         const adjustedSpend = Object.fromEntries(
           Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, prefs.includeMva)])
         );
         setAdSpendData(adjustedSpend);
-      } else {
-        setAdSpendData({});
       }
     } else {
       setAdSpendData({});
