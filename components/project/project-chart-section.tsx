@@ -110,14 +110,44 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
     }
 
     // Fetch distribution ranges instead of raw tickets (much smaller dataset!)
-    const { data: distributionRanges } = allShowIds.length > 0
-      ? await supabase
+    let distributionRanges: Array<{
+      show_id: string;
+      start_date: string;
+      end_date: string;
+      tickets: number;
+      revenue: number;
+      is_report_date: boolean;
+    }> | null = null;
+
+    if (allShowIds.length > 0) {
+      if (shareSlug) {
+        // On shared pages, use the server API endpoint to bypass RLS
+        try {
+          const response = await fetch(`/api/share/${shareSlug}/chart-data`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ showIds: allShowIds, startDate, endDate }),
+          });
+          if (response.ok) {
+            const result = await response.json();
+            distributionRanges = result.distributionRanges;
+          }
+        } catch {
+          distributionRanges = [];
+        }
+      } else {
+        // On authenticated pages, use direct Supabase query
+        const { data } = await supabase
           .from("ticket_distribution_ranges")
           .select("show_id, start_date, end_date, tickets, revenue, is_report_date")
           .in("show_id", allShowIds)
           .lte("start_date", endDate)
-          .gte("end_date", startDate)
-      : { data: [] };
+          .gte("end_date", startDate);
+        distributionRanges = data;
+      }
+    } else {
+      distributionRanges = [];
+    }
 
     // Expand distribution ranges into daily values with user's preferred weight
     const distributedItems = expandDistributionRanges(
