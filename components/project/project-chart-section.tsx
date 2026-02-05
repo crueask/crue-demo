@@ -63,6 +63,12 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
 
   // Fetch chart data when settings change
   const fetchChartData = useCallback(async () => {
+    console.log("[ProjectChartSection] fetchChartData called", {
+      shareSlug,
+      stopsCount: stops.length,
+      showsCount: stops.reduce((sum, s) => sum + s.shows.length, 0)
+    });
+
     if (stops.length === 0) {
       setChartData([]);
       setLoading(false);
