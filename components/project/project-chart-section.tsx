@@ -70,7 +70,9 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
     }
 
     setLoading(true);
-    const supabase = createClient();
+
+    // Only create Supabase client if we need it (not on share pages)
+    const supabase = shareSlug ? null : createClient();
 
     const { startDate, endDate } = getDateRange(
       prefs.dateRange,
@@ -139,7 +141,7 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
           console.error("Share chart data fetch failed:", err);
           distributionRanges = [];
         }
-      } else {
+      } else if (supabase) {
         // On authenticated pages, use direct Supabase query
         const { data } = await supabase
           .from("ticket_distribution_ranges")
@@ -358,13 +360,15 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
         } catch {
           setAdSpendData({});
         }
-      } else {
+      } else if (supabase) {
         // On authenticated pages, use direct Supabase query
         const adSpend = await getProjectAdSpend(supabase, projectId, startDate, endDate);
         const adjustedSpend = Object.fromEntries(
           Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, prefs.includeMva)])
         );
         setAdSpendData(adjustedSpend);
+      } else {
+        setAdSpendData({});
       }
     } else {
       setAdSpendData({});
