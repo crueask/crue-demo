@@ -46,6 +46,9 @@ interface ProjectChartSectionProps {
 }
 
 export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, shareSlug }: ProjectChartSectionProps) {
+  // Debug: Log on every render to see if component is mounting
+  console.log("[ProjectChartSection] Rendering with shareSlug:", shareSlug, "stops:", stops.length);
+
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [adSpendData, setAdSpendData] = useState<Record<string, number>>({});
   const [revenueData, setRevenueData] = useState<Record<string, number>>({});
