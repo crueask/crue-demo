@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // POST: Accept an invitation by token
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
+    const adminClient = createAdminClient();
     const body = await request.json();
 
     const { token } = body;
@@ -28,23 +30,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find the invitation
-    const { data: invitation, error: inviteError } = await supabase
+    // Find the invitation (use admin client to bypass RLS)
+    // Don't filter by accepted_at - trigger may have already accepted it
+    const { data: invitation, error: inviteError } = await adminClient
       .from("project_invitations")
       .select("*, projects(name)")
       .eq("token", token)
-      .is("accepted_at", null)
-      .gt("expires_at", new Date().toISOString())
       .single();
 
     if (inviteError || !invitation) {
       return NextResponse.json(
-        { error: "Invitation not found or expired" },
+        { error: "Invitation not found" },
         { status: 404 }
       );
     }
 
-    // Verify the email matches
+    // Verify the email matches (case-insensitive)
     if (invitation.email.toLowerCase() !== user.email?.toLowerCase()) {
       return NextResponse.json(
         { error: "This invitation was sent to a different email address" },
@@ -52,8 +53,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if already a member
-    const { data: existingMember } = await supabase
+    // Check if already a member (trigger may have already processed this)
+    const { data: existingMember } = await adminClient
       .from("project_members")
       .select("id")
       .eq("project_id", invitation.project_id)
@@ -61,21 +62,40 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (existingMember) {
-      // Mark invitation as accepted anyway
-      await supabase
-        .from("project_invitations")
-        .update({ accepted_at: new Date().toISOString() })
-        .eq("id", invitation.id);
+      // User is already a member - ensure invitation is marked as accepted
+      if (!invitation.accepted_at) {
+        await adminClient
+          .from("project_invitations")
+          .update({ accepted_at: new Date().toISOString() })
+          .eq("id", invitation.id);
+      }
 
       return NextResponse.json({
         success: true,
         message: "You are already a member of this project",
         projectId: invitation.project_id,
+        projectName: (invitation.projects as { name: string })?.name,
       });
     }
 
+    // If invitation was already accepted but user is not a member, something went wrong
+    // Allow them to proceed with membership creation
+    if (invitation.accepted_at) {
+      console.warn(
+        `Invitation ${invitation.id} was marked accepted but user ${user.id} is not a member`
+      );
+    }
+
+    // Check if expired (only for non-accepted invitations)
+    if (!invitation.accepted_at && new Date(invitation.expires_at) < new Date()) {
+      return NextResponse.json(
+        { error: "Invitation expired" },
+        { status: 400 }
+      );
+    }
+
     // Create project member
-    const { error: memberError } = await supabase
+    const { error: memberError } = await adminClient
       .from("project_members")
       .insert({
         project_id: invitation.project_id,
@@ -93,7 +113,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Mark invitation as accepted
-    await supabase
+    await adminClient
       .from("project_invitations")
       .update({ accepted_at: new Date().toISOString() })
       .eq("id", invitation.id);
@@ -117,7 +137,7 @@ export async function POST(request: NextRequest) {
 // GET: Check invitation status (for showing invite page)
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
+    const adminClient = createAdminClient();
     const { searchParams } = new URL(request.url);
     const token = searchParams.get("token");
 
@@ -128,8 +148,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Find the invitation
-    const { data: invitation, error } = await supabase
+    // Find the invitation (use admin client to bypass RLS,
+    // since the token itself is proof of access)
+    const { data: invitation, error } = await adminClient
       .from("project_invitations")
       .select("email, role, expires_at, accepted_at, projects(name)")
       .eq("token", token)
@@ -148,10 +169,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       email: invitation.email,
       role: invitation.role,
-      projectName: (invitation.projects as any)?.name,
+      projectId: (invitation as { project_id?: string }).project_id,
+      projectName: (invitation.projects as { name: string })?.name,
       isExpired,
       isAccepted,
-      valid: !isExpired && !isAccepted,
+      // valid means user can still accept - but if already accepted, they may already be a member
+      valid: !isExpired,
     });
   } catch (error) {
     console.error("Error in GET /api/invitations/accept:", error);

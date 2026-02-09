@@ -44,11 +44,21 @@ function SignupForm() {
       });
 
       if (authError) {
-        setError(authError.message);
+        // Provide user-friendly error messages
+        if (authError.message.includes("Database error")) {
+          setError("Det oppstod en feil ved opprettelse av brukeren. Vennligst prøv igjen.");
+        } else if (authError.message.includes("already registered")) {
+          setError("Denne e-postadressen er allerede registrert. Prøv å logge inn i stedet.");
+        } else {
+          setError(authError.message);
+        }
         return;
       }
 
       if (authData.user) {
+        // Brief delay to allow database trigger to process invitations
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
         if (isCrueEmail) {
           // Try to auto-join the Crue organization
           const { data: orgId, error: joinError } = await supabase

@@ -85,17 +85,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid invitation" }, { status: 404 });
     }
 
-    // Check if already accepted
-    if (invitation.accepted_at) {
-      return NextResponse.json({ error: "Invitation already accepted" }, { status: 400 });
-    }
-
-    // Check if expired
-    if (new Date(invitation.expires_at) < new Date()) {
-      return NextResponse.json({ error: "Invitation expired" }, { status: 400 });
-    }
-
-    // Check if email matches
+    // Check if email matches (case-insensitive)
     if (user.email?.toLowerCase() !== invitation.email.toLowerCase()) {
       return NextResponse.json(
         { error: "This invitation was sent to a different email address" },
@@ -103,7 +93,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if already a member
+    // Check if already a member (trigger may have already processed this)
     const { data: existingMember } = await adminClient
       .from("organization_members")
       .select("id")
@@ -112,16 +102,31 @@ export async function POST(request: Request) {
       .single();
 
     if (existingMember) {
-      // Mark invitation as accepted
-      await adminClient
-        .from("organization_invitations")
-        .update({ accepted_at: new Date().toISOString() })
-        .eq("id", invitation.id);
+      // User is already a member - ensure invitation is marked as accepted
+      if (!invitation.accepted_at) {
+        await adminClient
+          .from("organization_invitations")
+          .update({ accepted_at: new Date().toISOString() })
+          .eq("id", invitation.id);
+      }
 
       return NextResponse.json({
         success: true,
         message: "Already a member of this organization",
       });
+    }
+
+    // If invitation was already accepted but user is not a member, something went wrong
+    // Allow them to proceed with membership creation
+    if (invitation.accepted_at) {
+      console.warn(
+        `Invitation ${invitation.id} was marked accepted but user ${user.id} is not a member`
+      );
+    }
+
+    // Check if expired (only for non-accepted invitations)
+    if (!invitation.accepted_at && new Date(invitation.expires_at) < new Date()) {
+      return NextResponse.json({ error: "Invitation expired" }, { status: 400 });
     }
 
     // Create membership

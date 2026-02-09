@@ -12,6 +12,7 @@ import Link from "next/link";
 interface InvitationStatus {
   email: string;
   role: "viewer" | "editor";
+  projectId?: string;
   projectName: string;
   isExpired: boolean;
   isAccepted: boolean;
@@ -42,11 +43,31 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
 
         setInvitation(data);
 
-        // Check if user is authenticated upfront
+        // Check if user is authenticated
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
+
         if (!user) {
           setNotAuthenticated(true);
+          return;
+        }
+
+        // If user is authenticated and invitation was already accepted (by trigger during signup),
+        // try to accept again - the API will handle it gracefully and return success if already a member
+        if (data.isAccepted && user.email?.toLowerCase() === data.email.toLowerCase()) {
+          // Auto-accept to verify membership and redirect
+          const acceptResponse = await fetch("/api/invitations/accept", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token }),
+          });
+
+          if (acceptResponse.ok) {
+            const acceptData = await acceptResponse.json();
+            setSuccess(true);
+            setAcceptedProjectId(acceptData.projectId || data.projectId);
+            return;
+          }
         }
       } catch (err) {
         setError("Kunne ikke laste invitasjon");
