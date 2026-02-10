@@ -70,7 +70,8 @@ export interface MatchResult {
 export interface MatchedTixlyShow {
   tixly: ParsedTixlyShow;
   match: MatchResult;
-  // Internal app IDs (if ticket report created)
+  // Internal app IDs
+  // Note: ticketReportId is always null (Zapier creates tickets)
   appShowId: string | null;
   ticketReportId: string | null;
 }
@@ -117,9 +118,10 @@ export interface ZapierTixlyWebhook {
   };
 
   // App internal IDs
+  // Note: ticket_report_id is always null since tickets are created by Zapier
   app: {
-    show_id: string | null;
-    ticket_report_id: string | null;
+    show_id: string | null;        // Internal show UUID for reference
+    ticket_report_id: string | null; // Always null (Zapier creates tickets)
   } | null;
 }
 

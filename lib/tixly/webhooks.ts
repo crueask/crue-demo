@@ -66,7 +66,7 @@ export function buildWebhookPayload(
       is_new_match: match.isNewMatch,
     },
 
-    app: appShowId || ticketReportId ? {
+    app: appShowId ? {
       show_id: appShowId,
       ticket_report_id: ticketReportId,
     } : null,

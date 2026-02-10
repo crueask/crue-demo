@@ -4,6 +4,11 @@
  * Receives daily Tixly ticket reports, parses them, matches shows to Notion,
  * and sends individual webhooks back to Zapier for each matched show.
  *
+ * NOTE: This endpoint does NOT create ticket records internally.
+ * It processes Tixly reports, matches shows, and sends webhooks to Zapier.
+ * Zapier then creates the actual ticket records via /api/ticket-reports.
+ * This prevents duplicate tickets.
+ *
  * POST /api/tixly-reports
  * Content-Type: text/plain
  * Authorization: Bearer <API_KEY>
@@ -109,6 +114,10 @@ async function updateReportLog(
 
 /**
  * Create ticket report in the app (if show is matched to internal DB)
+ *
+ * NOTE: This function is currently NOT used by the Tixly flow.
+ * Tickets are created by Zapier via /api/ticket-reports to prevent duplicates.
+ * Kept for potential future use or other integrations.
  */
 async function createTicketReport(
   showId: string,
@@ -277,11 +286,10 @@ export async function POST(request: NextRequest) {
           newMatchCount++;
         }
 
-        // Try to create ticket report if we have internal show mapping
-        let ticketReportId: string | null = null;
+        // Look up internal show by Notion ID for webhook payload
+        // Note: We no longer create ticket records here - Zapier will create them
         let appShowId: string | null = null;
 
-        // Look up internal show by Notion ID
         if (matchResult.notionShow?.notionId) {
           const { data: internalShow } = await supabase
             .from('shows')
@@ -291,12 +299,6 @@ export async function POST(request: NextRequest) {
 
           if (internalShow?.id) {
             appShowId = internalShow.id;
-            ticketReportId = await createTicketReport(
-              internalShow.id,
-              show.ticketsSold,
-              show.revenue,
-              saleDate
-            );
           }
         }
 
@@ -304,7 +306,7 @@ export async function POST(request: NextRequest) {
           tixly: show,
           match: matchResult,
           appShowId,
-          ticketReportId,
+          ticketReportId: null, // Always null - Zapier creates tickets
         });
       } else {
         unmatchedCount++;
@@ -428,7 +430,7 @@ export async function GET() {
         tixly: 'Tixly report data (tickets_sold, revenue, etc.)',
         notion: 'Matched Notion show data (show_id, show_name, etc.)',
         match: 'Match metadata (method, confidence, is_new_match)',
-        app: 'Internal app IDs if ticket report created',
+        app: 'Internal app IDs (ticket_report_id is always null - Zapier creates tickets)',
       },
     },
     environment_variables: {
