@@ -34,11 +34,13 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TicketsChart } from "@/components/project/tickets-chart";
 import { StopAdConnections } from "@/components/project/stop-ad-connections";
-import { getStopAdSpend, applyMva } from "@/lib/ad-spend";
+import { PhaseSelector } from "@/components/project/phase-selector";
+import { getStopAdSpend, applyMva, getSourceLabel, type StopAdSpendTotal } from "@/lib/ad-spend";
 import {
   expandDistributionRanges,
   type DistributionRange,
 } from "@/lib/chart-utils";
+import type { PhaseCode } from "@/lib/types";
 
 interface Ticket {
   id: string;
@@ -61,6 +63,14 @@ interface Show {
   revenue: number;
 }
 
+interface Phase {
+  id: string;
+  code: PhaseCode;
+  name: string;
+  color: string | null;
+  icon: string | null;
+}
+
 interface Stop {
   id: string;
   project_id: string;
@@ -72,11 +82,15 @@ interface Stop {
   notes: string | null;
   shows: Show[];
   hasAdConnections?: boolean;
+  phase?: Phase | null;
+  totalAdSpend?: StopAdSpendTotal;
 }
 
 interface StopAccordionProps {
   stop: Stop;
+  phases: Phase[];
   onDataChange: () => void;
+  canViewAdSpend?: boolean;
 }
 
 interface ChartDataPoint {
@@ -84,7 +98,7 @@ interface ChartDataPoint {
   [key: string]: string | number;
 }
 
-export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
+export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: StopAccordionProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   // Chart data state
@@ -500,6 +514,15 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
                 )}
                 {stop.name}
               </h3>
+              {phases.length > 0 && (
+                <PhaseSelector
+                  stopId={stop.id}
+                  currentPhase={stop.phase || null}
+                  phases={phases}
+                  onPhaseChange={onDataChange}
+                  compact
+                />
+              )}
               {stop.hasAdConnections && (
                 <TooltipProvider>
                   <Tooltip>
@@ -519,6 +542,26 @@ export function StopAccordion({ stop, onDataChange }: StopAccordionProps) {
           </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
             <span>{stop.shows.length} show</span>
+            {canViewAdSpend && stop.totalAdSpend && stop.totalAdSpend.total > 0 && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-blue-600 font-medium cursor-default">
+                      {formatCurrency(applyMva(stop.totalAdSpend.total, true))}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {Object.entries(stop.totalAdSpend.bySource)
+                      .sort(([, a], [, b]) => b - a)
+                      .map(([source, spend]) => (
+                        <p key={source}>
+                          {getSourceLabel(source)}: {formatCurrency(applyMva(spend, true))}
+                        </p>
+                      ))}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
           <Progress value={fillRate} className="h-2 bg-muted" />
         </div>

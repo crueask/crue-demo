@@ -237,6 +237,83 @@ export async function getTotalAdSpend(
   return result;
 }
 
+export interface StopAdSpendTotal {
+  total: number;
+  bySource: Record<string, number>;
+}
+
+/**
+ * Get total (all-time) ad spend for multiple stops, broken down by source/platform
+ */
+export async function getStopTotalAdSpend(
+  supabase: SupabaseClient,
+  stopIds: string[]
+): Promise<Record<string, StopAdSpendTotal>> {
+  if (stopIds.length === 0) {
+    return {};
+  }
+
+  // Get all connections for these stops
+  const { data: connections } = await supabase
+    .from('stop_ad_connections')
+    .select('*')
+    .in('stop_id', stopIds);
+
+  if (!connections || connections.length === 0) {
+    return {};
+  }
+
+  const result: Record<string, StopAdSpendTotal> = {};
+
+  // Group connections by source/campaign/adset to avoid duplicate queries
+  const uniqueQueries = new Map<string, StopAdConnection[]>();
+  for (const conn of connections as StopAdConnection[]) {
+    const key = conn.connection_type === 'adset'
+      ? `${conn.source}:adset:${conn.campaign}:${conn.adset_id}`
+      : `${conn.source}:campaign:${conn.campaign}`;
+
+    if (!uniqueQueries.has(key)) {
+      uniqueQueries.set(key, []);
+    }
+    uniqueQueries.get(key)!.push(conn);
+  }
+
+  // Query each unique source/campaign/adset once
+  for (const [, conns] of uniqueQueries) {
+    const firstConn = conns[0];
+
+    let query = supabase
+      .from('facebook_ads')
+      .select('spend')
+      .eq('source', firstConn.source)
+      .eq('campaign', firstConn.campaign);
+
+    if (firstConn.connection_type === 'adset' && firstConn.adset_id) {
+      query = query.eq('adset_id', firstConn.adset_id);
+    }
+
+    const { data: adData } = await query;
+
+    if (adData) {
+      const totalSpend = adData.reduce((sum, row) => sum + Number(row.spend), 0);
+
+      // Allocate to each connection's stop individually
+      for (const conn of conns) {
+        const allocatedSpend = totalSpend * (conn.allocation_percent / 100);
+
+        if (!result[conn.stop_id]) {
+          result[conn.stop_id] = { total: 0, bySource: {} };
+        }
+        result[conn.stop_id].total += allocatedSpend;
+        result[conn.stop_id].bySource[conn.source] =
+          (result[conn.stop_id].bySource[conn.source] || 0) + allocatedSpend;
+      }
+    }
+  }
+
+  return result;
+}
+
 /**
  * Get available ad sources from facebook_ads table
  */

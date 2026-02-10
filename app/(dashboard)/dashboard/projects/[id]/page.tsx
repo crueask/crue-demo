@@ -35,6 +35,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { PhaseCode } from "@/lib/types";
+import { getStopTotalAdSpend, type StopAdSpendTotal } from "@/lib/ad-spend";
+
+interface Phase {
+  id: string;
+  code: PhaseCode;
+  name: string;
+  color: string | null;
+  icon: string | null;
+}
 
 interface Project {
   id: string;
@@ -71,6 +81,8 @@ interface Stop {
   notes: string | null;
   shows: Show[];
   hasAdConnections?: boolean;
+  phase?: Phase | null;
+  totalAdSpend?: StopAdSpendTotal;
 }
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -78,6 +90,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
+  const [phases, setPhases] = useState<Phase[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Edit project dialog
@@ -93,6 +106,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   // Share dialog
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
+
+  // Phase filter
+  const [selectedPhaseFilter, setSelectedPhaseFilter] = useState<string>("all");
 
   useEffect(() => {
     loadProjectData();
@@ -181,6 +197,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     setEditProjectName(projectData.name);
     setEditOrgId(projectData.organization_id);
 
+    // Get phase definitions
+    const { data: phasesData } = await supabase
+      .from("phase_definitions")
+      .select("*")
+      .order("display_order", { ascending: true });
+
+    setPhases((phasesData || []) as Phase[]);
+
+    // Create a map of phase id to phase for quick lookup
+    const phaseMap: Record<string, Phase> = {};
+    for (const phase of phasesData || []) {
+      phaseMap[phase.id] = phase as Phase;
+    }
+
     // Get stops
     const { data: stopsData } = await supabase
       .from("stops")
@@ -213,6 +243,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     const stopsWithAdConnections = new Set(
       (allAdConnections || []).map((ac) => ac.stop_id)
     );
+
+    // Batch fetch total ad spend for all stops
+    const adSpendByStop = await getStopTotalAdSpend(supabase, stopIds);
 
     // Group shows by stop_id
     const showsByStop: Record<string, typeof allShows> = {};
@@ -254,6 +287,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         ...stop,
         shows,
         hasAdConnections: stopsWithAdConnections.has(stop.id),
+        phase: stop.phase_id ? phaseMap[stop.phase_id] : null,
+        totalAdSpend: adSpendByStop[stop.id],
       };
     });
 
@@ -503,8 +538,29 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Turnéstopp section */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <h2 className="text-lg font-semibold text-gray-900">Turnéstopp</h2>
+          {phases.length > 0 && stops.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Fase:</span>
+              <Select
+                value={selectedPhaseFilter}
+                onValueChange={setSelectedPhaseFilter}
+              >
+                <SelectTrigger className="w-[140px] h-8 text-sm">
+                  <SelectValue placeholder="Alle faser" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Alle faser</SelectItem>
+                  {phases.map((phase) => (
+                    <SelectItem key={phase.id} value={phase.code}>
+                      {phase.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
         {stops.length === 0 ? (
@@ -516,9 +572,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </div>
         ) : (
           <div className="space-y-3">
-            {stops.map((stop) => (
-              <StopAccordion key={stop.id} stop={stop} onDataChange={loadProjectData} />
-            ))}
+            {stops
+              .filter((stop) => {
+                if (selectedPhaseFilter === "all") return true;
+                return stop.phase?.code === selectedPhaseFilter;
+              })
+              .map((stop) => (
+                <StopAccordion key={stop.id} stop={stop} phases={phases} onDataChange={loadProjectData} canViewAdSpend={canViewAdSpend} />
+              ))}
+            {stops.length > 0 && stops.filter((stop) => {
+              if (selectedPhaseFilter === "all") return true;
+              return stop.phase?.code === selectedPhaseFilter;
+            }).length === 0 && (
+              <div className="bg-white rounded-lg border border-dashed border-gray-300 p-8 text-center">
+                <p className="text-gray-500">Ingen stopp i denne fasen.</p>
+              </div>
+            )}
           </div>
         )}
       </div>
