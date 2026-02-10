@@ -166,11 +166,15 @@ export async function GET(request: NextRequest) {
     const isExpired = new Date(invitation.expires_at) < new Date();
     const isAccepted = !!invitation.accepted_at;
 
+    // Handle both single object and array from the join
+    const projectData = invitation.projects as unknown;
+    const project = Array.isArray(projectData) ? projectData[0] : projectData;
+
     return NextResponse.json({
       email: invitation.email,
       role: invitation.role,
       projectId: (invitation as { project_id?: string }).project_id,
-      projectName: (invitation.projects as { name: string })?.name,
+      projectName: (project as { name?: string })?.name,
       isExpired,
       isAccepted,
       // valid means user can still accept - but if already accepted, they may already be a member
