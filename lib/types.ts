@@ -113,6 +113,9 @@ export interface Database {
           capacity: number | null;
           notes: string | null;
           notion_id: string | null;
+          phase_id: string | null;
+          phase_started_at: string | null;
+          phase_notes: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -126,6 +129,9 @@ export interface Database {
           capacity?: number | null;
           notes?: string | null;
           notion_id?: string | null;
+          phase_id?: string | null;
+          phase_started_at?: string | null;
+          phase_notes?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -139,8 +145,72 @@ export interface Database {
           capacity?: number | null;
           notes?: string | null;
           notion_id?: string | null;
+          phase_id?: string | null;
+          phase_started_at?: string | null;
+          phase_notes?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+      };
+      phase_definitions: {
+        Row: {
+          id: string;
+          code: "routing" | "contracting" | "onsale" | "settlement";
+          name: string;
+          display_order: number;
+          description: string | null;
+          color: string | null;
+          icon: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          code: "routing" | "contracting" | "onsale" | "settlement";
+          name: string;
+          display_order: number;
+          description?: string | null;
+          color?: string | null;
+          icon?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          code?: "routing" | "contracting" | "onsale" | "settlement";
+          name?: string;
+          display_order?: number;
+          description?: string | null;
+          color?: string | null;
+          icon?: string | null;
+          created_at?: string;
+        };
+      };
+      stop_phase_history: {
+        Row: {
+          id: string;
+          stop_id: string;
+          from_phase_id: string | null;
+          to_phase_id: string;
+          changed_by: string | null;
+          reason: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          stop_id: string;
+          from_phase_id?: string | null;
+          to_phase_id: string;
+          changed_by?: string | null;
+          reason?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          stop_id?: string;
+          from_phase_id?: string | null;
+          to_phase_id?: string;
+          changed_by?: string | null;
+          reason?: string | null;
+          created_at?: string;
         };
       };
       shows: {
@@ -623,6 +693,11 @@ export type ProjectMember = Database["public"]["Tables"]["project_members"]["Row
 export type ProjectInvitation = Database["public"]["Tables"]["project_invitations"]["Row"];
 export type OrganizationMember = Database["public"]["Tables"]["organization_members"]["Row"];
 export type OrganizationInvitation = Database["public"]["Tables"]["organization_invitations"]["Row"];
+export type PhaseDefinition = Database["public"]["Tables"]["phase_definitions"]["Row"];
+export type StopPhaseHistory = Database["public"]["Tables"]["stop_phase_history"]["Row"];
+
+// Phase code type
+export type PhaseCode = "routing" | "contracting" | "onsale" | "settlement";
 
 // User role types
 export type ProjectRole = "viewer" | "editor" | "admin" | "super_admin";
@@ -636,6 +711,7 @@ export type ProjectWithStops = Project & {
 export type StopWithShows = Stop & {
   shows: Show[];
   project?: Project;
+  phase?: PhaseDefinition | null;
 };
 
 export type ShowWithTickets = Show & {

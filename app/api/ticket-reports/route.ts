@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { mergeStopsByNotionId } from "@/lib/stop-merge";
 
 // Use service role key for API access (bypasses RLS)
 const supabase = createClient(
@@ -452,6 +453,27 @@ async function findOrCreateStop(
       .single();
 
     if (existing) {
+      // Check for duplicate stops with same notion_id
+      const { data: duplicates } = await supabase
+        .from("stops")
+        .select("id")
+        .eq("notion_id", notionId)
+        .neq("id", existing.id);
+
+      if (duplicates && duplicates.length > 0) {
+        console.warn(
+          `[Deduplication] Found ${duplicates.length} duplicate stops for notion_id ${notionId}. Merging...`
+        );
+
+        // Merge all stops with this notion_id
+        const mergeResult = await mergeStopsByNotionId(supabase, notionId);
+
+        console.log(`[Deduplication] Merge complete:`, mergeResult);
+
+        // Update existing reference to canonical stop
+        existing.id = mergeResult.canonicalStopId;
+      }
+
       // Update fields if provided
       const updates: Record<string, string | number | null> = {};
       if (name) updates.name = name;
