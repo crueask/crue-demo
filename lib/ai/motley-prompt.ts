@@ -219,12 +219,19 @@ Her er analysen.Basert på dataene ser vi at ROAS er 3.2x.Dette betyr...
 - Use Norwegian currency formatting when displaying amounts (kr)
 `;
 
+export interface MotleyContextStop {
+  id: string;
+  name: string;
+  city?: string;
+}
+
 export interface MotleyContext {
   type: "organization" | "project";
   organizationId: string;
   organizationName?: string;
   projectId?: string;
   projectName?: string;
+  stops?: MotleyContextStop[];
 }
 
 export function getContextPrompt(context: MotleyContext): string {
@@ -247,6 +254,15 @@ export function getContextPrompt(context: MotleyContext): string {
       prompt += `- Project Name: ${context.projectName}\n`;
     }
     prompt += `- Focus your analysis on this specific project unless asked otherwise\n`;
+    prompt += `- IMPORTANT: All tool calls are automatically scoped to this project. When users mention stop/venue names, match them against the stops listed below.\n`;
+
+    if (context.stops?.length) {
+      prompt += `\n### Stops (Turnéstopp) in this project:\n`;
+      for (const stop of context.stops) {
+        prompt += `- **${stop.name}**${stop.city ? ` (${stop.city})` : ""} — Stop ID: ${stop.id}\n`;
+      }
+      prompt += `\nWhen users refer to a stop by name (e.g., "Polynation", "SWIM"), use the matching Stop ID above for your tool calls.\n`;
+    }
   } else {
     prompt += `- Currently viewing organization dashboard\n`;
     prompt += `- You can analyze data across all projects in the organization\n`;

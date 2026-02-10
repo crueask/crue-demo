@@ -941,15 +941,27 @@ async function executeGetAvailableData(
 ) {
   const result: Record<string, unknown> = {};
 
+  // When scoped to a project, always include stops so the AI can resolve stop names
+  const shouldIncludeStops = params.includeStops || !!params.projectId;
+
   if (params.includeProjects) {
-    const { data: projects } = await supabase
-      .from("projects")
-      .select("id, name, status")
-      .eq("organization_id", organizationId);
-    result.projects = projects || [];
+    if (params.projectId) {
+      // When scoped to a project, only return that project (not all org projects)
+      const { data: projects } = await supabase
+        .from("projects")
+        .select("id, name, status")
+        .eq("id", params.projectId);
+      result.projects = projects || [];
+    } else {
+      const { data: projects } = await supabase
+        .from("projects")
+        .select("id, name, status")
+        .eq("organization_id", organizationId);
+      result.projects = projects || [];
+    }
   }
 
-  if (params.includeStops) {
+  if (shouldIncludeStops) {
     const { data: projects } = await supabase
       .from("projects")
       .select("id")
@@ -1509,31 +1521,38 @@ async function executeTool(
   supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
   organizationId: string,
   toolName: string,
-  toolInput: Record<string, unknown>
+  toolInput: Record<string, unknown>,
+  contextProjectId?: string
 ): Promise<unknown> {
+  // When in project context, ensure projectId is set on tool inputs that support it.
+  // This prevents the AI from accidentally querying across all projects.
+  const input = contextProjectId
+    ? { ...toolInput, projectId: toolInput.projectId || contextProjectId }
+    : toolInput;
+
   switch (toolName) {
     case "queryData":
-      return executeQueryData(supabase, organizationId, toolInput as Parameters<typeof executeQueryData>[2]);
+      return executeQueryData(supabase, organizationId, input as Parameters<typeof executeQueryData>[2]);
 
     case "queryAdSpend":
       return executeQueryAdSpend(
         supabase,
         organizationId,
-        toolInput as Parameters<typeof executeQueryAdSpend>[2]
+        input as Parameters<typeof executeQueryAdSpend>[2]
       );
 
     case "compareEntities":
       return executeCompareEntities(
         supabase,
         organizationId,
-        toolInput as Parameters<typeof executeCompareEntities>[2]
+        input as Parameters<typeof executeCompareEntities>[2]
       );
 
     case "analyzeEfficiency":
       return executeAnalyzeEfficiency(
         supabase,
         organizationId,
-        toolInput as Parameters<typeof executeAnalyzeEfficiency>[2]
+        input as Parameters<typeof executeAnalyzeEfficiency>[2]
       );
 
     case "generateChart":
@@ -1544,35 +1563,35 @@ async function executeTool(
       return executeGetAvailableData(
         supabase,
         organizationId,
-        toolInput as Parameters<typeof executeGetAvailableData>[2]
+        input as Parameters<typeof executeGetAvailableData>[2]
       );
 
     case "analyzeSalesTiming":
       return executeAnalyzeSalesTiming(
         supabase,
         organizationId,
-        toolInput as Parameters<typeof executeAnalyzeSalesTiming>[2]
+        input as Parameters<typeof executeAnalyzeSalesTiming>[2]
       );
 
     case "getDailyTicketSales":
       return executeGetDailyTicketSales(
         supabase,
         organizationId,
-        toolInput as Parameters<typeof executeGetDailyTicketSales>[2]
+        input as Parameters<typeof executeGetDailyTicketSales>[2]
       );
 
     case "calculatePeriodRoas":
       return executeCalculatePeriodRoas(
         supabase,
         organizationId,
-        toolInput as Parameters<typeof executeCalculatePeriodRoas>[2]
+        input as Parameters<typeof executeCalculatePeriodRoas>[2]
       );
 
     case "calculateBatchPeriodRoas":
       return executeCalculateBatchPeriodRoas(
         supabase,
         organizationId,
-        toolInput as Parameters<typeof executeCalculateBatchPeriodRoas>[2]
+        input as Parameters<typeof executeCalculateBatchPeriodRoas>[2]
       );
 
     default:
@@ -1686,13 +1705,23 @@ export async function POST(req: Request) {
       }
     }
 
-    // Build context for the prompt
+    // Build context for the prompt, including stops when in project context
+    let contextStops: { id: string; name: string; city?: string }[] | undefined;
+    if (context.type === "project" && context.projectId) {
+      const { data: stops } = await supabase
+        .from("stops")
+        .select("id, name, city")
+        .eq("project_id", context.projectId);
+      contextStops = stops || undefined;
+    }
+
     const motleyContext: MotleyContext = {
       type: context.type,
       organizationId,
       organizationName,
       projectId: context.projectId,
       projectName: context.projectName,
+      stops: contextStops,
     };
 
     const fullSystemPrompt = motleySystemPrompt + getContextPrompt(motleyContext);
@@ -1831,7 +1860,8 @@ export async function POST(req: Request) {
                     supabase,
                     organizationId,
                     block.name,
-                    block.input as Record<string, unknown>
+                    block.input as Record<string, unknown>,
+                    context.type === "project" ? context.projectId : undefined
                   );
 
                   // Increment tool call counter
