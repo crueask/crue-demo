@@ -15,6 +15,7 @@ import {
   getPeriodMetrics,
   DistributionWeight,
 } from "@/lib/motley/daily-sales";
+import { getToolDisplayNameFromMessages, detectLanguage } from "@/lib/ai/tool-names";
 
 export const maxDuration = 60;
 
@@ -1831,28 +1832,42 @@ export async function POST(req: Request) {
                 // If response includes tool_use, this text is "reasoning" (shown in thinking section)
                 // If no tool_use (final answer), this text is the main "text" response
                 const eventType = hasToolUse ? "reasoning" : "text";
+
+                // Detect language from messages for reasoning text
+                const firstUserMessage = messages.find(m => m.role === "user");
+                const language = firstUserMessage ? detectLanguage(firstUserMessage.content) : "en";
+                const reasoningTitle = language === "no" ? "Resonerer" : "Reasoning";
+
                 controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: eventType, content: block.text })}\n\n`)
+                  encoder.encode(`data: ${JSON.stringify({
+                    type: eventType,
+                    content: block.text,
+                    title: hasToolUse ? reasoningTitle : undefined
+                  })}\n\n`)
                 );
                 // Collect content for persistence
                 if (!hasToolUse) {
                   fullAssistantContent += block.text;
                 } else {
-                  collectedThinkingSteps.push({ type: "analysis", title: "Tenker...", content: block.text });
+                  collectedThinkingSteps.push({ type: "analysis", title: reasoningTitle, content: block.text });
                 }
               } else if (block.type === "tool_use") {
-                // Stream tool use event
+                // Get natural language name for the tool
+                const displayName = getToolDisplayNameFromMessages(block.name, messages);
+
+                // Stream tool use event with display name
                 controller.enqueue(
                   encoder.encode(
                     `data: ${JSON.stringify({
                       type: "tool_call",
                       toolName: block.name,
                       toolInput: block.input,
+                      displayName,
                     })}\n\n`
                   )
                 );
-                // Collect tool call for persistence
-                collectedThinkingSteps.push({ type: "tool_call", title: block.name, toolName: block.name });
+                // Collect tool call for persistence with display name
+                collectedThinkingSteps.push({ type: "tool_call", title: displayName, toolName: block.name });
 
                 // Execute the tool with user's supabase client (respects RLS)
                 try {

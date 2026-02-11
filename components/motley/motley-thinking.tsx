@@ -61,7 +61,7 @@ export function MotleyThinking({ steps, isProcessing }: MotleyThinkingProps) {
                   step.status === "running" && "text-purple-600 font-medium",
                   step.status === "complete" && "text-gray-500"
                 )}>
-                  {step.type === "analysis" ? "Resonerer" : step.title}
+                  {step.title}
                 </span>
                 {step.status === "running" && (
                   <span className="text-purple-400 animate-pulse">...</span>

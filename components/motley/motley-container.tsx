@@ -154,7 +154,7 @@ export function MotleyContainer({
                 const reasoningStep: ThinkingStep = {
                   id: `reasoning-${Date.now()}`,
                   type: "analysis",
-                  title: "Tenker...",
+                  title: data.title || "Tenker...",
                   content: data.content,
                   status: "complete",
                 };
@@ -167,7 +167,7 @@ export function MotleyContainer({
                 const step: ThinkingStep = {
                   id: Date.now().toString(),
                   type: "tool_call",
-                  title: getToolDisplayName(data.toolName),
+                  title: data.displayName || getToolDisplayName(data.toolName),
                   toolName: data.toolName,
                   status: "running",
                 };
@@ -327,6 +327,9 @@ function getToolDisplayName(toolName: string): string {
     generateChart: "Lager visualisering",
     getAvailableData: "Sjekker tilgjengelig data",
     analyzeSalesTiming: "Analyserer salgstidspunkter",
+    getDailyTicketSales: "Henter daglig billettsalg",
+    calculatePeriodRoas: "Beregner ROAS for perioden",
+    calculateBatchPeriodRoas: "Beregner ROAS for flere stopp",
   };
   return displayNames[toolName] || toolName;
 }
