@@ -30,6 +30,7 @@ import {
   Trash2,
   Pencil,
   Megaphone,
+  TrendingUp,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TicketsChart } from "@/components/project/tickets-chart";
@@ -543,18 +544,21 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
           </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
             <span>{stop.shows.length} show</span>
-            <span className="text-blue-600 font-medium">
+            <span className="flex items-center gap-1.5 text-blue-600 font-medium">
+              <TrendingUp className="h-3.5 w-3.5" />
               {formatCurrency(totalRevenue)}
             </span>
             {canViewAdSpend && stop.totalAdSpend && stop.totalAdSpend.total > 0 && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="text-blue-600 font-medium cursor-default px-2 py-0.5 rounded border border-blue-200 bg-blue-50">
-                      {formatCurrency(applyMva(stop.totalAdSpend.total, true))} inkl. mva
+                    <span className="flex items-center gap-1.5 text-blue-600 font-medium cursor-default px-2 py-0.5 rounded border border-blue-200 bg-blue-50">
+                      <Megaphone className="h-3 w-3" />
+                      {formatCurrency(applyMva(stop.totalAdSpend.total, true))}
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
+                    <p className="font-medium mb-1">Annonsekostnader (inkl. mva)</p>
                     {Object.entries(stop.totalAdSpend.bySource)
                       .sort(([, a], [, b]) => b - a)
                       .map(([source, spend]) => (
