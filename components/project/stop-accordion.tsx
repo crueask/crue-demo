@@ -129,12 +129,12 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
   // Reload chart data when accordion opens or preferences change
   useEffect(() => {
     if (isOpen) {
-      // Clear existing data to force reload with new date range
+      // Clear existing data to force reload with new preferences
       setStopChartData([]);
       setShowChartData({});
       loadStopChartData();
     }
-  }, [isOpen, prefs.dateRange, prefs.customStartDate, prefs.customEndDate]);
+  }, [isOpen, prefs.dateRange, prefs.customStartDate, prefs.customEndDate, prefs.distributionWeight]);
 
   // Reports dialog state
   const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
@@ -280,7 +280,7 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
       showToShow,
       startDate,
       endDate,
-      'even' // Default weight for stop accordion
+      prefs.distributionWeight
     );
 
     // Aggregate distributed data by date and show
@@ -371,7 +371,7 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
       { [showId]: showId },
       startDate,
       endDate,
-      'even' // Default weight for show chart
+      prefs.distributionWeight
     );
 
     // Aggregate by date
@@ -641,15 +641,39 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                   setPrefs(newPrefs);
                   saveChartPreferences(newPrefs);
                 }}
-                metric="tickets_daily"
-                onMetricChange={() => {}} // Not used in stop accordion
+                metric={prefs.metric}
+                onMetricChange={(metric) => {
+                  const newPrefs = {
+                    ...prefs,
+                    metric
+                  };
+                  setPrefs(newPrefs);
+                  saveChartPreferences(newPrefs);
+                }}
                 entities={[]}
                 selectedEntities={[]}
                 onEntityFilterChange={() => {}} // Not used in stop accordion
-                showEstimations={false}
-                onShowEstimationsChange={() => {}} // Not used in stop accordion
-                distributionWeight="even"
-                onDistributionWeightChange={() => {}} // Not used in stop accordion
+                showEstimations={prefs.showEstimations}
+                onShowEstimationsChange={(showEstimations) => {
+                  const newPrefs = {
+                    ...prefs,
+                    showEstimations
+                  };
+                  setPrefs(newPrefs);
+                  saveChartPreferences(newPrefs);
+                }}
+                distributionWeight={prefs.distributionWeight}
+                onDistributionWeightChange={(distributionWeight) => {
+                  const newPrefs = {
+                    ...prefs,
+                    distributionWeight
+                  };
+                  setPrefs(newPrefs);
+                  saveChartPreferences(newPrefs);
+                  // Clear chart data to force reload with new distribution
+                  setStopChartData([]);
+                  setShowChartData({});
+                }}
               />
             </div>
           )}
@@ -670,6 +694,9 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                   }))}
                   title="Billettutvikling per show"
                   height={180}
+                  showEstimations={prefs.showEstimations}
+                  isCumulative={prefs.metric.includes('cumulative')}
+                  isRevenue={prefs.metric.includes('revenue')}
                   adSpendData={stopAdSpendData}
                   adSpendBreakdown={stopAdSpendBreakdown}
                   revenueData={stopRevenueData}
@@ -780,6 +807,9 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                             entities={[{ id: show.id, name: "Billetter" }]}
                             title={`Billettutvikling - ${show.name || formatDate(show.date)}`}
                             height={150}
+                            showEstimations={prefs.showEstimations}
+                            isCumulative={prefs.metric.includes('cumulative')}
+                            isRevenue={prefs.metric.includes('revenue')}
                           />
                         ) : (
                           <div className="h-[150px] flex items-center justify-center text-sm text-muted-foreground">

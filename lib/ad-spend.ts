@@ -586,6 +586,41 @@ export async function getSharedStops(
 }
 
 /**
+ * Expand a date range cost into daily costs
+ */
+function expandDateRangeCost(
+  startDateStr: string,
+  endDateStr: string,
+  totalSpend: number,
+  queryStartDate: string,
+  queryEndDate: string
+): Record<string, number> {
+  const result: Record<string, number> = {};
+
+  const startDate = new Date(startDateStr + 'T00:00:00');
+  const endDate = new Date(endDateStr + 'T00:00:00');
+  const queryStart = new Date(queryStartDate + 'T00:00:00');
+  const queryEnd = new Date(queryEndDate + 'T00:00:00');
+
+  // Calculate total days in the cost's date range
+  const totalDays = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const dailyCost = totalSpend / totalDays;
+
+  // Iterate through each day in the cost's range
+  const currentDate = new Date(startDate);
+  while (currentDate <= endDate) {
+    // Only include dates within the query range
+    if (currentDate >= queryStart && currentDate <= queryEnd) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      result[dateStr] = dailyCost;
+    }
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return result;
+}
+
+/**
  * Get daily manual marketing costs for a specific stop
  */
 export async function getStopManualCosts(
@@ -594,19 +629,33 @@ export async function getStopManualCosts(
   startDate: string,
   endDate: string
 ): Promise<Record<string, number>> {
+  // Query for manual costs that overlap with the date range
   const { data } = await supabase
     .from('marketing_spend')
-    .select('date, spend')
+    .select('start_date, end_date, spend')
     .eq('source_type', 'manual')
     .eq('stop_id', stopId)
-    .gte('date', startDate)
-    .lte('date', endDate);
+    .lte('start_date', endDate)  // Cost starts before or during query range
+    .gte('end_date', startDate);  // Cost ends after or during query range
 
   if (!data) return {};
 
   const result: Record<string, number> = {};
+
+  // Expand each cost entry across its date range
   for (const row of data) {
-    result[row.date] = (result[row.date] || 0) + Number(row.spend);
+    const dailyCosts = expandDateRangeCost(
+      row.start_date,
+      row.end_date,
+      Number(row.spend),
+      startDate,
+      endDate
+    );
+
+    // Merge into result
+    for (const [date, cost] of Object.entries(dailyCosts)) {
+      result[date] = (result[date] || 0) + cost;
+    }
   }
 
   return result;
@@ -621,19 +670,33 @@ export async function getProjectManualCosts(
   startDate: string,
   endDate: string
 ): Promise<Record<string, number>> {
+  // Query for manual costs that overlap with the date range
   const { data } = await supabase
     .from('marketing_spend')
-    .select('date, spend')
+    .select('start_date, end_date, spend')
     .eq('source_type', 'manual')
     .eq('project_id', projectId)
-    .gte('date', startDate)
-    .lte('date', endDate);
+    .lte('start_date', endDate)  // Cost starts before or during query range
+    .gte('end_date', startDate);  // Cost ends after or during query range
 
   if (!data) return {};
 
   const result: Record<string, number> = {};
+
+  // Expand each cost entry across its date range
   for (const row of data) {
-    result[row.date] = (result[row.date] || 0) + Number(row.spend);
+    const dailyCosts = expandDateRangeCost(
+      row.start_date,
+      row.end_date,
+      Number(row.spend),
+      startDate,
+      endDate
+    );
+
+    // Merge into result
+    for (const [date, cost] of Object.entries(dailyCosts)) {
+      result[date] = (result[date] || 0) + cost;
+    }
   }
 
   return result;
@@ -745,24 +808,34 @@ export async function getStopMarketingCostsWithBreakdown(
   // Get manual costs with category as source
   const { data: manualCosts } = await supabase
     .from('marketing_spend')
-    .select('date, spend, category')
+    .select('start_date, end_date, spend, category')
     .eq('source_type', 'manual')
     .eq('stop_id', stopId)
-    .gte('date', startDate)
-    .lte('date', endDate);
+    .lte('start_date', endDate)
+    .gte('end_date', startDate);
 
   if (manualCosts) {
     for (const cost of manualCosts) {
-      const date = cost.date;
-      const amount = Number(cost.spend);
       const sourceLabel = cost.category || 'Annet';
 
-      // Add to breakdown
-      if (!breakdown[date]) breakdown[date] = {};
-      breakdown[date][sourceLabel] = (breakdown[date][sourceLabel] || 0) + amount;
+      // Expand date range into daily costs
+      const dailyCosts = expandDateRangeCost(
+        cost.start_date,
+        cost.end_date,
+        Number(cost.spend),
+        startDate,
+        endDate
+      );
 
-      // Add to total
-      total[date] = (total[date] || 0) + amount;
+      // Add each day to breakdown and total
+      for (const [date, amount] of Object.entries(dailyCosts)) {
+        // Add to breakdown
+        if (!breakdown[date]) breakdown[date] = {};
+        breakdown[date][sourceLabel] = (breakdown[date][sourceLabel] || 0) + amount;
+
+        // Add to total
+        total[date] = (total[date] || 0) + amount;
+      }
     }
   }
 
@@ -839,24 +912,34 @@ export async function getProjectMarketingCostsWithBreakdown(
   // Get manual costs with category as source
   const { data: manualCosts } = await supabase
     .from('marketing_spend')
-    .select('date, spend, category')
+    .select('start_date, end_date, spend, category')
     .eq('source_type', 'manual')
     .eq('project_id', projectId)
-    .gte('date', startDate)
-    .lte('date', endDate);
+    .lte('start_date', endDate)
+    .gte('end_date', startDate);
 
   if (manualCosts) {
     for (const cost of manualCosts) {
-      const date = cost.date;
-      const amount = Number(cost.spend);
       const sourceLabel = cost.category || 'Annet';
 
-      // Add to breakdown
-      if (!breakdown[date]) breakdown[date] = {};
-      breakdown[date][sourceLabel] = (breakdown[date][sourceLabel] || 0) + amount;
+      // Expand date range into daily costs
+      const dailyCosts = expandDateRangeCost(
+        cost.start_date,
+        cost.end_date,
+        Number(cost.spend),
+        startDate,
+        endDate
+      );
 
-      // Add to total
-      total[date] = (total[date] || 0) + amount;
+      // Add each day to breakdown and total
+      for (const [date, amount] of Object.entries(dailyCosts)) {
+        // Add to breakdown
+        if (!breakdown[date]) breakdown[date] = {};
+        breakdown[date][sourceLabel] = (breakdown[date][sourceLabel] || 0) + amount;
+
+        // Add to total
+        total[date] = (total[date] || 0) + amount;
+      }
     }
   }
 
