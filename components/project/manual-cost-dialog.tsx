@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { format } from "date-fns";
+import { nb } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,14 +20,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
 import { MARKETING_COST_CATEGORIES, type MarketingCostCategory } from "@/lib/types";
-import { Info } from "lucide-react";
+import { Info, CalendarIcon } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 interface ManualCostDialogProps {
   open: boolean;
@@ -62,6 +70,12 @@ export function ManualCostDialog({
   const [externalCost, setExternalCost] = useState("");
   const [category, setCategory] = useState<MarketingCostCategory | "">("");
 
+  // Date picker state
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [tempStart, setTempStart] = useState<Date | undefined>();
+  const [tempEnd, setTempEnd] = useState<Date | undefined>();
+  const [selectingStart, setSelectingStart] = useState(true);
+
   // Reset form when dialog opens/closes or edit cost changes
   useEffect(() => {
     if (open) {
@@ -70,6 +84,8 @@ export function ManualCostDialog({
         setDescription(editCost.description);
         setStartDate(editCost.date);
         setEndDate(editCost.date);
+        setTempStart(new Date(editCost.date + 'T00:00:00'));
+        setTempEnd(new Date(editCost.date + 'T00:00:00'));
         setSpend(editCost.spend.toString());
         setExternalCost(editCost.external_cost ? editCost.external_cost.toString() : "");
         setCategory(editCost.category);
@@ -78,13 +94,55 @@ export function ManualCostDialog({
         setDescription("");
         setStartDate("");
         setEndDate("");
+        setTempStart(undefined);
+        setTempEnd(undefined);
         setSpend("");
         setExternalCost("");
         setCategory("");
       }
       setError(null);
+      setSelectingStart(true);
     }
   }, [open, editCost]);
+
+  const handleDateSelect = (date: Date | undefined) => {
+    if (!date) return;
+
+    if (selectingStart) {
+      setTempStart(date);
+      setTempEnd(undefined);
+      setSelectingStart(false);
+    } else {
+      // Ensure end is after start
+      if (tempStart && date < tempStart) {
+        setTempEnd(tempStart);
+        setTempStart(date);
+      } else {
+        setTempEnd(date);
+      }
+      setSelectingStart(true);
+    }
+  };
+
+  const handleDateApply = () => {
+    if (tempStart && tempEnd) {
+      const startStr = tempStart.toISOString().split('T')[0];
+      const endStr = tempEnd.toISOString().split('T')[0];
+      setStartDate(startStr);
+      setEndDate(endStr);
+      setIsDatePickerOpen(false);
+    }
+  };
+
+  const formatDateRange = () => {
+    if (!startDate || !endDate) return "Velg datoperiode";
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    if (startDate === endDate) {
+      return format(start, "d. MMMM yyyy", { locale: nb });
+    }
+    return `${format(start, "d. MMM", { locale: nb })} - ${format(end, "d. MMM yyyy", { locale: nb })}`;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -215,30 +273,80 @@ export function ManualCostDialog({
             />
           </div>
 
-          {/* Start Date */}
+          {/* Date Range Picker */}
           <div className="space-y-2">
-            <Label htmlFor="startDate">Startdato *</Label>
-            <Input
-              id="startDate"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              disabled={loading}
-              required
-            />
-          </div>
+            <Label>Datoperiode *</Label>
+            <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-left font-normal"
+                  disabled={loading}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {formatDateRange()}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <div className="p-3 border-b border-gray-100">
+                  <p className="text-sm font-medium text-gray-900 mb-1">
+                    Velg datoperiode
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {selectingStart ? "Velg startdato" : "Velg sluttdato"}
+                  </p>
+                </div>
 
-          {/* End Date */}
-          <div className="space-y-2">
-            <Label htmlFor="endDate">Sluttdato *</Label>
-            <Input
-              id="endDate"
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              disabled={loading}
-              required
-            />
+                <Calendar
+                  mode="single"
+                  selected={selectingStart ? tempStart : tempEnd}
+                  onSelect={handleDateSelect}
+                  locale={nb}
+                  modifiers={{
+                    range: tempStart && tempEnd
+                      ? { from: tempStart, to: tempEnd }
+                      : undefined,
+                    rangeStart: tempStart,
+                    rangeEnd: tempEnd,
+                  }}
+                  modifiersStyles={{
+                    range: { backgroundColor: 'rgb(219 234 254)' },
+                    rangeStart: { backgroundColor: 'rgb(59 130 246)', color: 'white', borderRadius: '4px 0 0 4px' },
+                    rangeEnd: { backgroundColor: 'rgb(59 130 246)', color: 'white', borderRadius: '0 4px 4px 0' },
+                  }}
+                  className="rounded-md"
+                />
+
+                <div className="p-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                  <div className="text-xs text-gray-500">
+                    {tempStart && (
+                      <span>
+                        {format(tempStart, "d. MMM yyyy", { locale: nb })}
+                        {tempEnd && ` - ${format(tempEnd, "d. MMM yyyy", { locale: nb })}`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setIsDatePickerOpen(false)}
+                    >
+                      Avbryt
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={!tempStart || !tempEnd}
+                      onClick={handleDateApply}
+                    >
+                      Bruk
+                    </Button>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Spend */}
