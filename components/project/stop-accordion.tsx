@@ -130,6 +130,7 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
 
   const totalTicketsSold = stop.shows.reduce((sum, s) => sum + s.tickets_sold, 0);
   const totalCapacity = stop.shows.reduce((sum, s) => sum + (s.capacity || 0), 0);
+  const totalRevenue = stop.shows.reduce((sum, s) => sum + s.revenue, 0);
   const fillRate = totalCapacity > 0 ? Math.round((totalTicketsSold / totalCapacity) * 100) : 0;
 
   const formatNumber = (value: number) => {
@@ -542,12 +543,15 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
           </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
             <span>{stop.shows.length} show</span>
+            <span className="text-blue-600 font-medium">
+              {formatCurrency(totalRevenue)}
+            </span>
             {canViewAdSpend && stop.totalAdSpend && stop.totalAdSpend.total > 0 && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="text-blue-600 font-medium cursor-default">
-                      {formatCurrency(applyMva(stop.totalAdSpend.total, true))}
+                    <span className="text-blue-600 font-medium cursor-default px-2 py-0.5 rounded border border-blue-200 bg-blue-50">
+                      {formatCurrency(applyMva(stop.totalAdSpend.total, true))} inkl. mva
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
