@@ -12,7 +12,8 @@ interface ManualCost {
   stop_id: string;
   project_id: string;
   description: string;
-  date: string;
+  start_date: string;
+  end_date: string;
   spend: number;
   external_cost: number | null;
   category: MarketingCostCategory;
@@ -59,17 +60,6 @@ function formatDateRange(startDate: string, endDate: string): string {
     day: "numeric",
     month: "short",
   }).format(start)} - ${formatDate(endDate)}`;
-}
-
-interface GroupedCost {
-  description: string;
-  category: MarketingCostCategory;
-  startDate: string;
-  endDate: string;
-  totalSpend: number;
-  totalExternalCost: number | null;
-  ids: string[];
-  representativeCost: ManualCost; // For editing
 }
 
 export function ManualMarketingCosts({
@@ -123,21 +113,21 @@ export function ManualMarketingCosts({
     setIsDialogOpen(true);
   };
 
-  const handleDelete = async (ids: string[]) => {
+  const handleDelete = async (costId: string) => {
     if (!confirm("Er du sikker på at du vil slette denne kostnaden?")) {
       return;
     }
 
-    setDeleting(ids[0]);
+    setDeleting(costId);
     try {
-      // Delete all entries in the group
-      await Promise.all(
-        ids.map((costId) =>
-          fetch(`/api/manual-marketing-costs?costId=${costId}`, {
-            method: "DELETE",
-          })
-        )
-      );
+      const response = await fetch(`/api/manual-marketing-costs?costId=${costId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Kunne ikke slette kostnad");
+      }
 
       await fetchCosts();
       onDataChange?.();
@@ -148,39 +138,6 @@ export function ManualMarketingCosts({
       setDeleting(null);
     }
   };
-
-  // Group costs by description and category
-  const groupedCosts = costs.reduce((acc, cost) => {
-    const key = `${cost.description}|||${cost.category}`;
-
-    if (!acc[key]) {
-      acc[key] = {
-        description: cost.description,
-        category: cost.category,
-        startDate: cost.date,
-        endDate: cost.date,
-        totalSpend: 0,
-        totalExternalCost: 0,
-        ids: [],
-        representativeCost: cost,
-      };
-    }
-
-    const group = acc[key];
-    group.ids.push(cost.id);
-    group.totalSpend += cost.spend;
-    if (cost.external_cost) {
-      group.totalExternalCost = (group.totalExternalCost || 0) + cost.external_cost;
-    }
-
-    // Update date range
-    if (cost.date < group.startDate) group.startDate = cost.date;
-    if (cost.date > group.endDate) group.endDate = cost.date;
-
-    return acc;
-  }, {} as Record<string, GroupedCost>);
-
-  const groupedCostsList = Object.values(groupedCosts);
 
   if (loading && !roleLoading) {
     return (
@@ -209,18 +166,18 @@ export function ManualMarketingCosts({
         )}
       </div>
 
-      {groupedCostsList.length === 0 ? (
+      {costs.length === 0 ? (
         <div className="text-sm text-gray-500 py-2 px-3 bg-gray-50 rounded-md">
           Ingen manuelle kostnader registrert
         </div>
       ) : (
         <div className="space-y-2">
-          {groupedCostsList.map((group) => {
-            const icon = CATEGORY_ICONS[group.category] || "📦";
+          {costs.map((cost) => {
+            const icon = CATEGORY_ICONS[cost.category] || "📦";
 
             return (
               <div
-                key={group.ids[0]}
+                key={cost.id}
                 className="p-3 bg-white border border-gray-200 rounded-md hover:border-gray-300 transition-colors"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -229,7 +186,7 @@ export function ManualMarketingCosts({
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-base">{icon}</span>
                       <p className="font-medium text-sm text-gray-900 truncate">
-                        {group.description}
+                        {cost.description}
                       </p>
                     </div>
 
@@ -237,20 +194,20 @@ export function ManualMarketingCosts({
                     <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
                       <span className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
-                        {formatDateRange(group.startDate, group.endDate)}
+                        {formatDateRange(cost.start_date, cost.end_date)}
                       </span>
                       <span className="flex items-center gap-1">
                         <Tag className="h-3 w-3" />
-                        {group.category}
+                        {cost.category}
                       </span>
                     </div>
 
                     {/* Cost */}
                     <div className="text-sm font-semibold text-gray-900">
-                      {formatCurrency(group.totalSpend)}
-                      {group.totalExternalCost && group.totalExternalCost > 0 && (
+                      {formatCurrency(cost.spend)}
+                      {cost.external_cost && cost.external_cost > 0 && (
                         <span className="ml-2 text-xs font-normal text-gray-500">
-                          ({formatCurrency(group.totalExternalCost)} ekstern)
+                          ({formatCurrency(cost.external_cost)} ekstern)
                         </span>
                       )}
                     </div>
@@ -262,7 +219,7 @@ export function ManualMarketingCosts({
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleEdit(group.representativeCost)}
+                        onClick={() => handleEdit(cost)}
                         className="h-7 w-7 p-0"
                         title="Rediger"
                       >
@@ -271,8 +228,8 @@ export function ManualMarketingCosts({
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDelete(group.ids)}
-                        disabled={deleting === group.ids[0]}
+                        onClick={() => handleDelete(cost.id)}
+                        disabled={deleting === cost.id}
                         className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                         title="Slett"
                       >

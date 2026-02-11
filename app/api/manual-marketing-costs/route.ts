@@ -130,52 +130,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Calculate number of days in range (inclusive)
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const dayCount = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-
-    // Divide spend equally across all days
-    const spendPerDay = Number(spend) / dayCount;
-    const externalCostPerDay = externalCost ? Number(externalCost) / dayCount : null;
-
-    // Create entries for each day in the range
-    const entries = [];
-    for (let i = 0; i < dayCount; i++) {
-      const currentDate = new Date(start);
-      currentDate.setDate(start.getDate() + i);
-      const dateStr = currentDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
-
-      entries.push({
+    // Create a single entry with date range
+    const { data: newCost, error } = await supabase
+      .from("marketing_spend")
+      .insert({
         source_type: "manual",
         project_id: projectId,
         stop_id: stopId,
         description: description.trim(),
-        date: dateStr,
-        spend: spendPerDay,
-        external_cost: externalCostPerDay,
+        start_date: startDate,
+        end_date: endDate,
+        date: startDate, // Use start date as the primary date field for compatibility
+        spend: Number(spend),
+        external_cost: externalCost ? Number(externalCost) : null,
         category: category,
         platform: null, // Manual entries don't have a platform
-      });
-    }
-
-    const { data: newCosts, error } = await supabase
-      .from("marketing_spend")
-      .insert(entries)
-      .select();
+      })
+      .select()
+      .single();
 
     if (error) {
-      console.error("Error creating manual costs:", error);
+      console.error("Error creating manual cost:", error);
       return NextResponse.json(
-        { error: "Failed to create manual costs", details: error.message },
+        { error: "Failed to create manual cost", details: error.message },
         { status: 500 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      costs: newCosts,
-      message: `Manual costs created successfully for ${dayCount} day${dayCount > 1 ? 's' : ''}`,
+      cost: newCost,
+      message: "Manual cost created successfully",
     });
   } catch (error) {
     console.error("Error in POST /api/manual-marketing-costs:", error);
@@ -202,7 +187,7 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json();
 
-    const { costId, description, date, spend, externalCost, category } = body;
+    const { costId, description, startDate, endDate, spend, externalCost, category } = body;
 
     if (!costId) {
       return NextResponse.json(
@@ -224,8 +209,16 @@ export async function PATCH(request: NextRequest) {
       updates.description = description.trim();
     }
 
-    if (date !== undefined) {
-      updates.date = date;
+    if (startDate !== undefined && endDate !== undefined) {
+      if (startDate > endDate) {
+        return NextResponse.json(
+          { error: "End date must be after or equal to start date" },
+          { status: 400 }
+        );
+      }
+      updates.start_date = startDate;
+      updates.end_date = endDate;
+      updates.date = startDate; // Keep date field in sync with start_date
     }
 
     if (spend !== undefined) {

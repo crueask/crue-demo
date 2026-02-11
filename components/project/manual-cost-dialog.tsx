@@ -44,7 +44,8 @@ interface ManualCostDialogProps {
   editCost?: {
     id: string;
     description: string;
-    date: string;
+    start_date: string;
+    end_date: string;
     spend: number;
     external_cost: number | null;
     category: MarketingCostCategory;
@@ -80,12 +81,12 @@ export function ManualCostDialog({
   useEffect(() => {
     if (open) {
       if (editCost) {
-        // Populate form for editing (single date in both fields)
+        // Populate form for editing with date range
         setDescription(editCost.description);
-        setStartDate(editCost.date);
-        setEndDate(editCost.date);
-        setTempStart(new Date(editCost.date + 'T00:00:00'));
-        setTempEnd(new Date(editCost.date + 'T00:00:00'));
+        setStartDate(editCost.start_date);
+        setEndDate(editCost.end_date);
+        setTempStart(new Date(editCost.start_date + 'T00:00:00'));
+        setTempEnd(new Date(editCost.end_date + 'T00:00:00'));
         setSpend(editCost.spend.toString());
         setExternalCost(editCost.external_cost ? editCost.external_cost.toString() : "");
         setCategory(editCost.category);
@@ -174,12 +175,6 @@ export function ManualCostDialog({
       return;
     }
 
-    // When editing, don't allow changing to a date range
-    if (editCost && startDate !== endDate) {
-      setError("Kan ikke endre til et datointervall ved redigering");
-      return;
-    }
-
     if (!spend || Number(spend) <= 0) {
       setError("Kostnad må være et positivt tall");
       return;
@@ -205,7 +200,8 @@ export function ManualCostDialog({
         ? {
             costId: editCost.id,
             description: description.trim(),
-            date: startDate, // When editing, startDate === endDate
+            startDate,
+            endDate,
             spend: Number(spend),
             externalCost: externalCost ? Number(externalCost) : null,
             category,

@@ -27,7 +27,8 @@ interface ManualCost {
   stop_id: string;
   project_id: string;
   description: string;
-  date: string;
+  start_date: string;
+  end_date: string;
   spend: number;
   external_cost: number | null;
   category: MarketingCostCategory;
@@ -43,7 +44,7 @@ interface SharedStop {
 // Unified list item type
 type CostItem =
   | { type: 'campaign'; data: Connection }
-  | { type: 'manual'; data: GroupedManualCost };
+  | { type: 'manual'; data: ManualCost };
 
 interface StopAdConnectionsProps {
   stopId: string;
@@ -86,17 +87,6 @@ function formatDateRange(startDate: string, endDate: string): string {
     day: "numeric",
     month: "short",
   }).format(start)} - ${formatDate(endDate)}`;
-}
-
-interface GroupedManualCost {
-  description: string;
-  category: MarketingCostCategory;
-  startDate: string;
-  endDate: string;
-  totalSpend: number;
-  totalExternalCost: number | null;
-  ids: string[];
-  representativeCost: ManualCost; // For editing
 }
 
 export function StopAdConnections({
@@ -290,21 +280,21 @@ export function StopAdConnections({
     setIsManualCostDialogOpen(true);
   };
 
-  const handleDeleteManualCost = async (ids: string[]) => {
+  const handleDeleteManualCost = async (costId: string) => {
     if (!confirm("Er du sikker på at du vil slette denne kostnaden?")) {
       return;
     }
 
-    setDeleting(ids[0]);
+    setDeleting(costId);
     try {
-      // Delete all entries in the group
-      await Promise.all(
-        ids.map((costId) =>
-          fetch(`/api/manual-marketing-costs?costId=${costId}`, {
-            method: "DELETE",
-          })
-        )
-      );
+      const response = await fetch(`/api/manual-marketing-costs?costId=${costId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Kunne ikke slette kostnad");
+      }
 
       await fetchAllData();
       onDataChange?.();
@@ -330,43 +320,10 @@ export function StopAdConnections({
     return conn.allocation_percent + sharedTotal;
   };
 
-  // Group manual costs by description and category
-  const groupedManualCosts = manualCosts.reduce((acc, cost) => {
-    const key = `${cost.description}|||${cost.category}`;
-
-    if (!acc[key]) {
-      acc[key] = {
-        description: cost.description,
-        category: cost.category,
-        startDate: cost.date,
-        endDate: cost.date,
-        totalSpend: 0,
-        totalExternalCost: 0,
-        ids: [],
-        representativeCost: cost,
-      };
-    }
-
-    const group = acc[key];
-    group.ids.push(cost.id);
-    group.totalSpend += cost.spend;
-    if (cost.external_cost) {
-      group.totalExternalCost = (group.totalExternalCost || 0) + cost.external_cost;
-    }
-
-    // Update date range
-    if (cost.date < group.startDate) group.startDate = cost.date;
-    if (cost.date > group.endDate) group.endDate = cost.date;
-
-    return acc;
-  }, {} as Record<string, GroupedManualCost>);
-
-  const groupedManualCostsList = Object.values(groupedManualCosts);
-
   // Combine campaigns and manual costs into unified list
   const allItems: CostItem[] = [
     ...connections.map(conn => ({ type: 'campaign' as const, data: conn })),
-    ...groupedManualCostsList.map(group => ({ type: 'manual' as const, data: group }))
+    ...manualCosts.map(cost => ({ type: 'manual' as const, data: cost }))
   ];
 
   // If not super admin and no items exist, don't show this section at all
@@ -540,13 +497,13 @@ export function StopAdConnections({
                 </div>
               );
             } else {
-              // Manual cost item (grouped)
-              const group = item.data;
-              const icon = CATEGORY_ICONS[group.category] || "📦";
+              // Manual cost item
+              const cost = item.data;
+              const icon = CATEGORY_ICONS[cost.category] || "📦";
 
               return (
                 <div
-                  key={`manual-${group.ids[0]}`}
+                  key={`manual-${cost.id}`}
                   className="p-3 bg-white border border-gray-200 rounded-md hover:border-gray-300 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -555,7 +512,7 @@ export function StopAdConnections({
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-base">{icon}</span>
                         <p className="font-medium text-sm text-gray-900 truncate">
-                          {group.description}
+                          {cost.description}
                         </p>
                       </div>
 
@@ -563,20 +520,20 @@ export function StopAdConnections({
                       <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
                         <span className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
-                          {formatDateRange(group.startDate, group.endDate)}
+                          {formatDateRange(cost.start_date, cost.end_date)}
                         </span>
                         <span className="flex items-center gap-1">
                           <Tag className="h-3 w-3" />
-                          {group.category}
+                          {cost.category}
                         </span>
                       </div>
 
                       {/* Cost */}
                       <div className="text-sm font-semibold text-gray-900">
-                        {formatCurrency(group.totalSpend)}
-                        {group.totalExternalCost && group.totalExternalCost > 0 && (
+                        {formatCurrency(cost.spend)}
+                        {cost.external_cost && cost.external_cost > 0 && (
                           <span className="ml-2 text-xs font-normal text-gray-500">
-                            ({formatCurrency(group.totalExternalCost)} ekstern)
+                            ({formatCurrency(cost.external_cost)} ekstern)
                           </span>
                         )}
                       </div>
@@ -588,7 +545,7 @@ export function StopAdConnections({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleEditManualCost(group.representativeCost)}
+                          onClick={() => handleEditManualCost(cost)}
                           className="h-7 w-7 p-0"
                           title="Rediger"
                         >
@@ -597,8 +554,8 @@ export function StopAdConnections({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDeleteManualCost(group.ids)}
-                          disabled={deleting === group.ids[0]}
+                          onClick={() => handleDeleteManualCost(cost.id)}
+                          disabled={deleting === cost.id}
                           className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                           title="Slett"
                         >
