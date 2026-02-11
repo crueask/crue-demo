@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -36,10 +36,16 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { TicketsChart } from "@/components/project/tickets-chart";
 import { StopAdConnections } from "@/components/project/stop-ad-connections";
 import { PhaseSelector } from "@/components/project/phase-selector";
-import { getStopAdSpend, applyMva, getSourceLabel, type StopAdSpendTotal } from "@/lib/ad-spend";
+import { ChartSettings } from "@/components/chart/chart-settings";
+import { getStopMarketingCostsWithBreakdown, applyMva, getSourceLabel, type StopAdSpendTotal } from "@/lib/ad-spend";
 import {
   expandDistributionRanges,
   type DistributionRange,
+  type ChartPreferences,
+  getDateRange,
+  loadChartPreferences,
+  saveChartPreferences,
+  defaultChartPreferences,
 } from "@/lib/chart-utils";
 import type { PhaseCode } from "@/lib/types";
 
@@ -105,10 +111,30 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
   // Chart data state
   const [stopChartData, setStopChartData] = useState<ChartDataPoint[]>([]);
   const [stopAdSpendData, setStopAdSpendData] = useState<Record<string, number>>({});
+  const [stopAdSpendBreakdown, setStopAdSpendBreakdown] = useState<Record<string, Record<string, number>>>({});
   const [stopRevenueData, setStopRevenueData] = useState<Record<string, number>>({});
   const [showChartData, setShowChartData] = useState<Record<string, ChartDataPoint[]>>({});
   const [expandedShows, setExpandedShows] = useState<Set<string>>(new Set());
   const [loadingCharts, setLoadingCharts] = useState(false);
+
+  // Chart preferences state
+  const [prefs, setPrefs] = useState<ChartPreferences>(defaultChartPreferences);
+
+  // Load preferences on mount
+  useEffect(() => {
+    const saved = loadChartPreferences();
+    setPrefs(saved);
+  }, []);
+
+  // Reload chart data when accordion opens or preferences change
+  useEffect(() => {
+    if (isOpen) {
+      // Clear existing data to force reload with new date range
+      setStopChartData([]);
+      setShowChartData({});
+      loadStopChartData();
+    }
+  }, [isOpen, prefs.dateRange, prefs.customStartDate, prefs.customEndDate]);
 
   // Reports dialog state
   const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
@@ -210,15 +236,21 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
     setLoadingCharts(true);
     const supabase = createClient();
 
-    // Calculate date range for the last 14 days
+    // Get date range from preferences
+    const { startDate, endDate } = getDateRange(
+      prefs.dateRange,
+      prefs.customStartDate,
+      prefs.customEndDate
+    );
+
+    // Build dates array for the range
     const dates: string[] = [];
-    for (let i = 0; i < 14; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - 1 - (13 - i));
-      dates.push(date.toISOString().split('T')[0]);
+    const currentDate = new Date(startDate);
+    const lastDate = new Date(endDate);
+    while (currentDate <= lastDate) {
+      dates.push(currentDate.toISOString().split('T')[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
     }
-    const startDate = dates[0];
-    const endDate = dates[dates.length - 1];
 
     // Get all show IDs
     const showIds = stop.shows.map(s => s.id);
@@ -289,9 +321,15 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
     setStopChartData(formattedData);
     setStopRevenueData(revenueByDate);
 
-    // Fetch ad spend for the stop
-    const adSpend = await getStopAdSpend(supabase, stop.id, startDate, endDate);
-    setStopAdSpendData(adSpend);
+    // Fetch marketing costs (ad spend + manual costs) with breakdown for the stop
+    const { total: marketingCosts, breakdown: marketingBreakdown } = await getStopMarketingCostsWithBreakdown(
+      supabase,
+      stop.id,
+      startDate,
+      endDate
+    );
+    setStopAdSpendData(marketingCosts);
+    setStopAdSpendBreakdown(marketingBreakdown);
 
     setLoadingCharts(false);
   }
@@ -303,15 +341,21 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
     const show = stop.shows.find(s => s.id === showId);
     if (!show) return;
 
-    // Calculate date range for the last 14 days
+    // Get date range from preferences (same as stop chart)
+    const { startDate, endDate } = getDateRange(
+      prefs.dateRange,
+      prefs.customStartDate,
+      prefs.customEndDate
+    );
+
+    // Build dates array for the range
     const dates: string[] = [];
-    for (let i = 0; i < 14; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - 1 - (13 - i));
-      dates.push(date.toISOString().split('T')[0]);
+    const currentDate = new Date(startDate);
+    const lastDate = new Date(endDate);
+    while (currentDate <= lastDate) {
+      dates.push(currentDate.toISOString().split('T')[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
     }
-    const startDate = dates[0];
-    const endDate = dates[dates.length - 1];
 
     // Fetch distribution ranges for this show
     const { data: distributionRanges } = await supabase
@@ -530,7 +574,7 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
           </div>
           <div className="flex items-center gap-3 text-sm text-muted-foreground mb-2">
             <span>{stop.shows.length} show</span>
-            <span className="flex items-center gap-1.5 text-emerald-700 font-medium px-2 py-0.5 rounded-md bg-emerald-50">
+            <span className="flex items-center gap-1.5 text-gray-700 font-medium px-2 py-0.5 rounded-md bg-gray-100">
               <TrendingUp className="h-3.5 w-3.5" />
               {formatCurrency(totalRevenue)}
             </span>
@@ -538,7 +582,7 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="flex items-center gap-1.5 text-orange-700 font-medium cursor-default px-2 py-0.5 rounded-md bg-orange-50">
+                    <span className="flex items-center gap-1.5 text-blue-700 font-medium cursor-default px-2 py-0.5 rounded-md bg-blue-50">
                       <Megaphone className="h-3 w-3" />
                       {formatCurrency(applyMva(stop.totalAdSpend.total, true))}
                     </span>
@@ -580,6 +624,36 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
       {/* Expanded content */}
       {isOpen && (
         <div className="px-4 pb-4 border-t border-border/30">
+          {/* Chart Settings */}
+          {stop.shows.length > 0 && (
+            <div className="mt-4">
+              <ChartSettings
+                dateRange={prefs.dateRange}
+                customStartDate={prefs.customStartDate}
+                customEndDate={prefs.customEndDate}
+                onDateRangeChange={(range, start, end) => {
+                  const newPrefs = {
+                    ...prefs,
+                    dateRange: range,
+                    customStartDate: start,
+                    customEndDate: end
+                  };
+                  setPrefs(newPrefs);
+                  saveChartPreferences(newPrefs);
+                }}
+                metric="tickets_daily"
+                onMetricChange={() => {}} // Not used in stop accordion
+                entities={[]}
+                selectedEntities={[]}
+                onEntityFilterChange={() => {}} // Not used in stop accordion
+                showEstimations={false}
+                onShowEstimationsChange={() => {}} // Not used in stop accordion
+                distributionWeight="even"
+                onDistributionWeightChange={() => {}} // Not used in stop accordion
+              />
+            </div>
+          )}
+
           {/* Stop-level chart grouped by shows */}
           {stop.shows.length > 0 && (
             <div className="mt-4 mb-6">
@@ -597,6 +671,7 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                   title="Billettutvikling per show"
                   height={180}
                   adSpendData={stopAdSpendData}
+                  adSpendBreakdown={stopAdSpendBreakdown}
                   revenueData={stopRevenueData}
                   includeMva={true}
                 />
@@ -608,6 +683,7 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
           <StopAdConnections
             stopId={stop.id}
             stopName={stop.name}
+            projectId={stop.project_id}
             onDataChange={onDataChange}
           />
 

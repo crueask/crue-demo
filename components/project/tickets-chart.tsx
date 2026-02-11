@@ -25,6 +25,7 @@ interface TicketsChartProps {
   isCumulative?: boolean;
   isRevenue?: boolean;
   adSpendData?: Record<string, number>;
+  adSpendBreakdown?: Record<string, Record<string, number>>; // date -> source -> amount
   includeMva?: boolean;
   revenueData?: Record<string, number>; // Daily revenue for ROAS/MER calculation
 }
@@ -63,6 +64,7 @@ export function TicketsChart({
   isCumulative = false,
   isRevenue = false,
   adSpendData,
+  adSpendBreakdown,
   includeMva = false,
   revenueData,
 }: TicketsChartProps) {
@@ -320,13 +322,28 @@ export function TicketsChart({
                                 style={{ backgroundColor: AD_SPEND_COLOR }}
                               />
                               <span className="text-sm text-gray-600">
-                                Annonsekostnad{includeMva ? '' : ' (eks. mva)'}
+                                Markedsføringskostnad{includeMva ? '' : ' (eks. mva)'}
                               </span>
                             </div>
                             <span className="text-sm font-semibold" style={{ color: AD_SPEND_COLOR }}>
                               {formatCurrency(adSpendValue)}
                             </span>
                           </div>
+                          {/* Source breakdown */}
+                          {adSpendBreakdown && adSpendBreakdown[label] && Object.keys(adSpendBreakdown[label]).length > 1 && (
+                            <div className="ml-6 space-y-0.5">
+                              {Object.entries(adSpendBreakdown[label])
+                                .sort(([, a], [, b]) => b - a)
+                                .map(([source, amount]) => (
+                                  <div key={source} className="flex items-center justify-between gap-4">
+                                    <span className="text-xs text-gray-500">├─ {source}</span>
+                                    <span className="text-xs text-gray-500">
+                                      {formatCurrency(includeMva ? amount * 1.25 : amount)}
+                                    </span>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
                           {hasRoasData && (
                             <>
                               <div className="flex items-center justify-between gap-4">
@@ -445,7 +462,7 @@ export function TicketsChart({
                   style={{ backgroundColor: AD_SPEND_COLOR }}
                 />
                 <span className="text-xs whitespace-nowrap" style={{ color: AD_SPEND_COLOR }}>
-                  Annonsekostnad{includeMva ? ' (inkl. mva)' : ' (eks. mva)'}
+                  Markedsføringskostnad{includeMva ? ' (inkl. mva)' : ' (eks. mva)'}
                 </span>
               </div>
             )}

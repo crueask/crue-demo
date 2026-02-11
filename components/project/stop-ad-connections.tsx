@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Plus, Trash2, Users, AlertTriangle, Lock } from "lucide-react";
 import { getSourceLabel } from "@/lib/ad-spend";
 import { CampaignLinkingDialog } from "./campaign-linking-dialog";
+import { ManualMarketingCosts } from "./manual-marketing-costs";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 
 interface Connection {
@@ -29,12 +30,14 @@ interface SharedStop {
 interface StopAdConnectionsProps {
   stopId: string;
   stopName: string;
+  projectId: string;
   onDataChange?: () => void;
 }
 
 export function StopAdConnections({
   stopId,
   stopName,
+  projectId,
   onDataChange,
 }: StopAdConnectionsProps) {
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -208,28 +211,37 @@ export function StopAdConnections({
 
   return (
     <div className="mb-6">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-          Annonsekostnader
-        </span>
-        {isSuperAdmin ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => setIsAddDialogOpen(true)}
-            disabled={loading || roleLoading}
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            Koble til
-          </Button>
-        ) : (
-          <span className="text-xs text-gray-400 flex items-center gap-1">
-            <Lock className="h-3 w-3" />
-            Kun AAA
-          </span>
-        )}
+      {/* Main heading */}
+      <div className="mb-4">
+        <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+          ANNONSEKOSTNADER
+        </h3>
       </div>
+
+      {/* Campaigns section */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+            Kampanjer
+          </span>
+          {isSuperAdmin ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setIsAddDialogOpen(true)}
+              disabled={loading || roleLoading}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Koble til
+            </Button>
+          ) : (
+            <span className="text-xs text-gray-400 flex items-center gap-1">
+              <Lock className="h-3 w-3" />
+              Kun AAA
+            </span>
+          )}
+        </div>
 
       {loading ? (
         <div className="py-4 text-center text-sm text-gray-500">
@@ -357,15 +369,23 @@ export function StopAdConnections({
         </div>
       )}
 
-      {isSuperAdmin && (
-        <CampaignLinkingDialog
-          open={isAddDialogOpen}
-          onOpenChange={setIsAddDialogOpen}
-          stopId={stopId}
-          stopName={stopName}
-          onSuccess={handleConnectionAdded}
-        />
-      )}
+        {isSuperAdmin && (
+          <CampaignLinkingDialog
+            open={isAddDialogOpen}
+            onOpenChange={setIsAddDialogOpen}
+            stopId={stopId}
+            stopName={stopName}
+            onSuccess={handleConnectionAdded}
+          />
+        )}
+      </div>
+
+      {/* Manual Marketing Costs Section */}
+      <ManualMarketingCosts
+        stopId={stopId}
+        projectId={projectId}
+        onDataChange={onDataChange}
+      />
     </div>
   );
 }

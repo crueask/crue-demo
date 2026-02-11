@@ -22,7 +22,7 @@ import {
   removeEstimations,
   expandDistributionRanges,
 } from "@/lib/chart-utils";
-import { getProjectAdSpend, applyMva } from "@/lib/ad-spend";
+import { getProjectMarketingCostsWithBreakdown, applyMva } from "@/lib/ad-spend";
 import { ChartSkeleton, LegendSkeleton } from "@/components/ui/chart-skeleton";
 
 interface Show {
@@ -51,6 +51,7 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
 
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [adSpendData, setAdSpendData] = useState<Record<string, number>>({});
+  const [adSpendBreakdown, setAdSpendBreakdown] = useState<Record<string, Record<string, number>>>({});
   const [revenueData, setRevenueData] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
@@ -378,12 +379,18 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
           setAdSpendData({});
         }
       } else if (supabase) {
-        // On authenticated pages, use direct Supabase query
-        const adSpend = await getProjectAdSpend(supabase, projectId, startDate, endDate);
+        // On authenticated pages, use direct Supabase query for marketing costs (ad spend + manual costs) with breakdown
+        const { total: marketingCosts, breakdown: marketingBreakdown } = await getProjectMarketingCostsWithBreakdown(
+          supabase,
+          projectId,
+          startDate,
+          endDate
+        );
         const adjustedSpend = Object.fromEntries(
-          Object.entries(adSpend).map(([date, amount]) => [date, applyMva(amount, prefs.includeMva)])
+          Object.entries(marketingCosts).map(([date, amount]) => [date, applyMva(amount, prefs.includeMva)])
         );
         setAdSpendData(adjustedSpend);
+        setAdSpendBreakdown(marketingBreakdown);
       } else {
         setAdSpendData({});
       }
@@ -524,6 +531,7 @@ export function ProjectChartSection({ projectId, stops, canViewAdSpend = false, 
           isCumulative={isCumulative}
           isRevenue={isRevenue}
           adSpendData={canViewAdSpend && prefs.showAdSpend ? adSpendData : undefined}
+          adSpendBreakdown={canViewAdSpend && prefs.showAdSpend ? adSpendBreakdown : undefined}
           includeMva={prefs.includeMva}
           revenueData={canViewAdSpend && prefs.showAdSpend ? revenueData : undefined}
         />

@@ -584,3 +584,281 @@ export async function getSharedStops(
     allocationPercent: Number(row.allocation_percent),
   }));
 }
+
+/**
+ * Get daily manual marketing costs for a specific stop
+ */
+export async function getStopManualCosts(
+  supabase: SupabaseClient,
+  stopId: string,
+  startDate: string,
+  endDate: string
+): Promise<Record<string, number>> {
+  const { data } = await supabase
+    .from('marketing_spend')
+    .select('date, spend')
+    .eq('source_type', 'manual')
+    .eq('stop_id', stopId)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  if (!data) return {};
+
+  const result: Record<string, number> = {};
+  for (const row of data) {
+    result[row.date] = (result[row.date] || 0) + Number(row.spend);
+  }
+
+  return result;
+}
+
+/**
+ * Get daily manual marketing costs for a project (sum of all stops in the project)
+ */
+export async function getProjectManualCosts(
+  supabase: SupabaseClient,
+  projectId: string,
+  startDate: string,
+  endDate: string
+): Promise<Record<string, number>> {
+  const { data } = await supabase
+    .from('marketing_spend')
+    .select('date, spend')
+    .eq('source_type', 'manual')
+    .eq('project_id', projectId)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  if (!data) return {};
+
+  const result: Record<string, number> = {};
+  for (const row of data) {
+    result[row.date] = (result[row.date] || 0) + Number(row.spend);
+  }
+
+  return result;
+}
+
+/**
+ * Get combined marketing costs (automated ad spend + manual costs) for a stop
+ */
+export async function getStopMarketingCosts(
+  supabase: SupabaseClient,
+  stopId: string,
+  startDate: string,
+  endDate: string
+): Promise<Record<string, number>> {
+  // Get automated ad spend
+  const adSpend = await getStopAdSpend(supabase, stopId, startDate, endDate);
+
+  // Get manual costs
+  const manualCosts = await getStopManualCosts(supabase, stopId, startDate, endDate);
+
+  // Merge both sources
+  const result = { ...adSpend };
+  for (const [date, spend] of Object.entries(manualCosts)) {
+    result[date] = (result[date] || 0) + spend;
+  }
+
+  return result;
+}
+
+/**
+ * Get combined marketing costs (automated ad spend + manual costs) for a project
+ */
+export async function getProjectMarketingCosts(
+  supabase: SupabaseClient,
+  projectId: string,
+  startDate: string,
+  endDate: string
+): Promise<Record<string, number>> {
+  // Get automated ad spend
+  const adSpend = await getProjectAdSpend(supabase, projectId, startDate, endDate);
+
+  // Get manual costs
+  const manualCosts = await getProjectManualCosts(supabase, projectId, startDate, endDate);
+
+  // Merge both sources
+  const result = { ...adSpend };
+  for (const [date, spend] of Object.entries(manualCosts)) {
+    result[date] = (result[date] || 0) + spend;
+  }
+
+  return result;
+}
+
+/**
+ * Get marketing costs with source breakdown for a stop
+ * Returns total costs per date AND breakdown by source
+ */
+export async function getStopMarketingCostsWithBreakdown(
+  supabase: SupabaseClient,
+  stopId: string,
+  startDate: string,
+  endDate: string
+): Promise<{
+  total: Record<string, number>;
+  breakdown: Record<string, Record<string, number>>; // date -> source -> amount
+}> {
+  const breakdown: Record<string, Record<string, number>> = {};
+  const total: Record<string, number> = {};
+
+  // Get automated ad spend with source info
+  const { data: connections } = await supabase
+    .from('stop_ad_connections')
+    .select('*')
+    .eq('stop_id', stopId);
+
+  if (connections && connections.length > 0) {
+    for (const conn of connections as StopAdConnection[]) {
+      let query = supabase
+        .from('facebook_ads')
+        .select('date, source, campaign, adset_id, spend')
+        .eq('source', conn.source)
+        .eq('campaign', conn.campaign)
+        .gte('date', startDate)
+        .lte('date', endDate);
+
+      if (conn.connection_type === 'adset' && conn.adset_id) {
+        query = query.eq('adset_id', conn.adset_id);
+      }
+
+      const { data: adData } = await query;
+
+      if (adData) {
+        for (const row of adData as AdDataRow[]) {
+          const date = row.date;
+          const allocatedSpend = Number(row.spend) * (conn.allocation_percent / 100);
+          const sourceLabel = getSourceLabel(row.source);
+
+          // Add to breakdown
+          if (!breakdown[date]) breakdown[date] = {};
+          breakdown[date][sourceLabel] = (breakdown[date][sourceLabel] || 0) + allocatedSpend;
+
+          // Add to total
+          total[date] = (total[date] || 0) + allocatedSpend;
+        }
+      }
+    }
+  }
+
+  // Get manual costs with category as source
+  const { data: manualCosts } = await supabase
+    .from('marketing_spend')
+    .select('date, spend, category')
+    .eq('source_type', 'manual')
+    .eq('stop_id', stopId)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  if (manualCosts) {
+    for (const cost of manualCosts) {
+      const date = cost.date;
+      const amount = Number(cost.spend);
+      const sourceLabel = cost.category || 'Annet';
+
+      // Add to breakdown
+      if (!breakdown[date]) breakdown[date] = {};
+      breakdown[date][sourceLabel] = (breakdown[date][sourceLabel] || 0) + amount;
+
+      // Add to total
+      total[date] = (total[date] || 0) + amount;
+    }
+  }
+
+  return { total, breakdown };
+}
+
+/**
+ * Get marketing costs with source breakdown for a project
+ * Returns total costs per date AND breakdown by source
+ */
+export async function getProjectMarketingCostsWithBreakdown(
+  supabase: SupabaseClient,
+  projectId: string,
+  startDate: string,
+  endDate: string
+): Promise<{
+  total: Record<string, number>;
+  breakdown: Record<string, Record<string, number>>; // date -> source -> amount
+}> {
+  const breakdown: Record<string, Record<string, number>> = {};
+  const total: Record<string, number> = {};
+
+  // Get all stops for this project
+  const { data: stops } = await supabase
+    .from('stops')
+    .select('id')
+    .eq('project_id', projectId);
+
+  if (!stops || stops.length === 0) {
+    return { total: {}, breakdown: {} };
+  }
+
+  const stopIds = stops.map(s => s.id);
+
+  // Get automated ad spend with source info
+  const { data: connections } = await supabase
+    .from('stop_ad_connections')
+    .select('*')
+    .in('stop_id', stopIds);
+
+  if (connections && connections.length > 0) {
+    for (const conn of connections as StopAdConnection[]) {
+      let query = supabase
+        .from('facebook_ads')
+        .select('date, source, campaign, adset_id, spend')
+        .eq('source', conn.source)
+        .eq('campaign', conn.campaign)
+        .gte('date', startDate)
+        .lte('date', endDate);
+
+      if (conn.connection_type === 'adset' && conn.adset_id) {
+        query = query.eq('adset_id', conn.adset_id);
+      }
+
+      const { data: adData } = await query;
+
+      if (adData) {
+        for (const row of adData as AdDataRow[]) {
+          const date = row.date;
+          const allocatedSpend = Number(row.spend) * (conn.allocation_percent / 100);
+          const sourceLabel = getSourceLabel(row.source);
+
+          // Add to breakdown
+          if (!breakdown[date]) breakdown[date] = {};
+          breakdown[date][sourceLabel] = (breakdown[date][sourceLabel] || 0) + allocatedSpend;
+
+          // Add to total
+          total[date] = (total[date] || 0) + allocatedSpend;
+        }
+      }
+    }
+  }
+
+  // Get manual costs with category as source
+  const { data: manualCosts } = await supabase
+    .from('marketing_spend')
+    .select('date, spend, category')
+    .eq('source_type', 'manual')
+    .eq('project_id', projectId)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  if (manualCosts) {
+    for (const cost of manualCosts) {
+      const date = cost.date;
+      const amount = Number(cost.spend);
+      const sourceLabel = cost.category || 'Annet';
+
+      // Add to breakdown
+      if (!breakdown[date]) breakdown[date] = {};
+      breakdown[date][sourceLabel] = (breakdown[date][sourceLabel] || 0) + amount;
+
+      // Add to total
+      total[date] = (total[date] || 0) + amount;
+    }
+  }
+
+  return { total, breakdown };
+}

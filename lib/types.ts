@@ -794,3 +794,28 @@ export type ChatConversationWithDetails = ChatConversation & {
   messages?: ChatMessage[];
   shares?: ChatShare[];
 };
+
+// Marketing Cost Category types
+export const MARKETING_COST_CATEGORIES = [
+  'Programmatisk',
+  'Out Of Home',
+  'Print',
+  'Radio',
+  'TV',
+  'Influencer',
+  'Annet',
+] as const;
+
+export type MarketingCostCategory = typeof MARKETING_COST_CATEGORIES[number];
+
+export interface ManualMarketingCost {
+  id: string;
+  project_id: string;
+  stop_id: string;
+  description: string;
+  date: string;
+  spend: number;
+  external_cost: number | null;
+  category: MarketingCostCategory;
+  created_at: string;
+}
