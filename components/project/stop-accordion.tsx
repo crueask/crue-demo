@@ -525,26 +525,12 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                   compact
                 />
               )}
-              {stop.hasAdConnections && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-100">
-                        <Megaphone className="h-3 w-3 text-blue-600" />
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Koblet til annonsekampanjer</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
             </div>
             <span className="text-sm text-muted-foreground">{fillRate}%</span>
           </div>
-          <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground mb-2">
             <span>{stop.shows.length} show</span>
-            <span className="flex items-center gap-1.5 text-blue-600 font-medium">
+            <span className="flex items-center gap-1.5 text-emerald-700 font-medium px-2 py-0.5 rounded-md bg-emerald-50">
               <TrendingUp className="h-3.5 w-3.5" />
               {formatCurrency(totalRevenue)}
             </span>
@@ -552,7 +538,7 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="flex items-center gap-1.5 text-blue-600 font-medium cursor-default px-2 py-0.5 rounded border border-blue-200 bg-blue-50">
+                    <span className="flex items-center gap-1.5 text-orange-700 font-medium cursor-default px-2 py-0.5 rounded-md bg-orange-50">
                       <Megaphone className="h-3 w-3" />
                       {formatCurrency(applyMva(stop.totalAdSpend.total, true))}
                     </span>
