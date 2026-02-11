@@ -419,51 +419,60 @@ export type Database = {
         Row: {
           allocation_complete: boolean | null
           campaign_name: string | null
+          category: string | null
           clicks: number | null
           conversions: number | null
           cost_type: string | null
           created_at: string | null
           date: string
           description: string | null
+          external_cost: number | null
           id: string
           impressions: number | null
-          platform: string
+          platform: string | null
           project_id: string
           show_id: string | null
+          source_type: string | null
           spend: number
           stop_id: string | null
         }
         Insert: {
           allocation_complete?: boolean | null
           campaign_name?: string | null
+          category?: string | null
           clicks?: number | null
           conversions?: number | null
           cost_type?: string | null
           created_at?: string | null
           date: string
           description?: string | null
+          external_cost?: number | null
           id?: string
           impressions?: number | null
-          platform: string
+          platform?: string | null
           project_id: string
           show_id?: string | null
+          source_type?: string | null
           spend?: number
           stop_id?: string | null
         }
         Update: {
           allocation_complete?: boolean | null
           campaign_name?: string | null
+          category?: string | null
           clicks?: number | null
           conversions?: number | null
           cost_type?: string | null
           created_at?: string | null
           date?: string
           description?: string | null
+          external_cost?: number | null
           id?: string
           impressions?: number | null
-          platform?: string
+          platform?: string | null
           project_id?: string
           show_id?: string | null
+          source_type?: string | null
           spend?: number
           stop_id?: string | null
         }
