@@ -42,10 +42,13 @@ import {
   expandDistributionRanges,
   type DistributionRange,
   type ChartPreferences,
+  type ChartDataPoint,
   getDateRange,
   loadChartPreferences,
   saveChartPreferences,
   defaultChartPreferences,
+  toCumulative,
+  removeEstimations,
 } from "@/lib/chart-utils";
 import type { PhaseCode } from "@/lib/types";
 
@@ -98,11 +101,6 @@ interface StopAccordionProps {
   phases: Phase[];
   onDataChange: () => void;
   canViewAdSpend?: boolean;
-}
-
-interface ChartDataPoint {
-  date: string;
-  [key: string]: string | number;
 }
 
 export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: StopAccordionProps) {
@@ -203,6 +201,23 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
       day: "numeric",
       month: "short",
     }).replace(".", "");
+  };
+
+  // Transform chart data based on preferences
+  const transformChartData = (data: ChartDataPoint[], entityIds: string[]) => {
+    let transformedData = data;
+
+    // Remove estimations if preference is off
+    if (!prefs.showEstimations) {
+      transformedData = removeEstimations(transformedData, entityIds);
+    }
+
+    // Convert to cumulative if needed
+    if (prefs.metric.includes('cumulative')) {
+      transformedData = toCumulative(transformedData, entityIds);
+    }
+
+    return transformedData;
   };
 
   // Get date range string for the stop's shows
@@ -687,7 +702,10 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                 </div>
               ) : (
                 <TicketsChart
-                  data={stopChartData}
+                  data={transformChartData(
+                    stopChartData,
+                    stop.shows.map(s => s.id)
+                  )}
                   entities={stop.shows.map((s) => ({
                     id: s.id,
                     name: s.name || formatDate(s.date),
@@ -803,7 +821,10 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                       <div className="px-3 pb-3 pt-1 border-t border-gray-50">
                         {showChartData[show.id] ? (
                           <TicketsChart
-                            data={showChartData[show.id]}
+                            data={transformChartData(
+                              showChartData[show.id],
+                              [show.id]
+                            )}
                             entities={[{ id: show.id, name: "Billetter" }]}
                             title={`Billettutvikling - ${show.name || formatDate(show.date)}`}
                             height={150}

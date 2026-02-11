@@ -36,7 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { PhaseCode } from "@/lib/types";
-import { getStopTotalAdSpend, type StopAdSpendTotal } from "@/lib/ad-spend";
+import { getStopTotalMarketingCosts, type StopAdSpendTotal } from "@/lib/ad-spend";
 
 interface Phase {
   id: string;
@@ -244,8 +244,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       (allAdConnections || []).map((ac) => ac.stop_id)
     );
 
-    // Batch fetch total ad spend for all stops
-    const adSpendByStop = await getStopTotalAdSpend(supabase, stopIds);
+    // Batch fetch total marketing costs (ad spend + manual costs) for all stops
+    const adSpendByStop = await getStopTotalMarketingCosts(supabase, stopIds);
 
     // Group shows by stop_id
     const showsByStop: Record<string, typeof allShows> = {};

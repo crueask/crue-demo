@@ -315,6 +315,46 @@ export async function getStopTotalAdSpend(
 }
 
 /**
+ * Get total (all-time) marketing costs for multiple stops, including both automated ad spend and manual costs
+ * Broken down by source/platform and category
+ */
+export async function getStopTotalMarketingCosts(
+  supabase: SupabaseClient,
+  stopIds: string[]
+): Promise<Record<string, StopAdSpendTotal>> {
+  if (stopIds.length === 0) {
+    return {};
+  }
+
+  // Start with automated ad spend
+  const result = await getStopTotalAdSpend(supabase, stopIds);
+
+  // Add manual costs
+  const { data: manualCosts } = await supabase
+    .from('marketing_spend')
+    .select('stop_id, spend, category')
+    .eq('source_type', 'manual')
+    .in('stop_id', stopIds);
+
+  if (manualCosts) {
+    for (const cost of manualCosts) {
+      const stopId = cost.stop_id;
+      const amount = Number(cost.spend);
+      const sourceLabel = cost.category || 'Annet';
+
+      if (!result[stopId]) {
+        result[stopId] = { total: 0, bySource: {} };
+      }
+
+      result[stopId].total += amount;
+      result[stopId].bySource[sourceLabel] = (result[stopId].bySource[sourceLabel] || 0) + amount;
+    }
+  }
+
+  return result;
+}
+
+/**
  * Get available ad sources from facebook_ads table
  */
 export async function getAvailableSources(
