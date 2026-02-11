@@ -56,7 +56,8 @@ export function ManualCostDialog({
 
   // Form fields
   const [description, setDescription] = useState("");
-  const [date, setDate] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [spend, setSpend] = useState("");
   const [externalCost, setExternalCost] = useState("");
   const [category, setCategory] = useState<MarketingCostCategory | "">("");
@@ -65,16 +66,18 @@ export function ManualCostDialog({
   useEffect(() => {
     if (open) {
       if (editCost) {
-        // Populate form for editing
+        // Populate form for editing (single date in both fields)
         setDescription(editCost.description);
-        setDate(editCost.date);
+        setStartDate(editCost.date);
+        setEndDate(editCost.date);
         setSpend(editCost.spend.toString());
         setExternalCost(editCost.external_cost ? editCost.external_cost.toString() : "");
         setCategory(editCost.category);
       } else {
         // Reset form for new entry
         setDescription("");
-        setDate("");
+        setStartDate("");
+        setEndDate("");
         setSpend("");
         setExternalCost("");
         setCategory("");
@@ -98,8 +101,24 @@ export function ManualCostDialog({
       return;
     }
 
-    if (!date) {
-      setError("Dato er påkrevd");
+    if (!startDate) {
+      setError("Startdato er påkrevd");
+      return;
+    }
+
+    if (!endDate) {
+      setError("Sluttdato er påkrevd");
+      return;
+    }
+
+    if (startDate > endDate) {
+      setError("Sluttdato må være etter eller lik startdato");
+      return;
+    }
+
+    // When editing, don't allow changing to a date range
+    if (editCost && startDate !== endDate) {
+      setError("Kan ikke endre til et datointervall ved redigering");
       return;
     }
 
@@ -128,7 +147,7 @@ export function ManualCostDialog({
         ? {
             costId: editCost.id,
             description: description.trim(),
-            date,
+            date: startDate, // When editing, startDate === endDate
             spend: Number(spend),
             externalCost: externalCost ? Number(externalCost) : null,
             category,
@@ -137,7 +156,8 @@ export function ManualCostDialog({
             stopId,
             projectId,
             description: description.trim(),
-            date,
+            startDate,
+            endDate,
             spend: Number(spend),
             externalCost: externalCost ? Number(externalCost) : null,
             category,
@@ -195,14 +215,27 @@ export function ManualCostDialog({
             />
           </div>
 
-          {/* Date */}
+          {/* Start Date */}
           <div className="space-y-2">
-            <Label htmlFor="date">Dato *</Label>
+            <Label htmlFor="startDate">Startdato *</Label>
             <Input
-              id="date"
+              id="startDate"
               type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              disabled={loading}
+              required
+            />
+          </div>
+
+          {/* End Date */}
+          <div className="space-y-2">
+            <Label htmlFor="endDate">Sluttdato *</Label>
+            <Input
+              id="endDate"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
               disabled={loading}
               required
             />
@@ -210,7 +243,7 @@ export function ManualCostDialog({
 
           {/* Spend */}
           <div className="space-y-2">
-            <Label htmlFor="spend">Kostnad (kr) *</Label>
+            <Label htmlFor="spend">Kostnad inkl. mva (kr) *</Label>
             <Input
               id="spend"
               type="number"

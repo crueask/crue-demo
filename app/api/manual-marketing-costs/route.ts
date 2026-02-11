@@ -80,12 +80,20 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const { stopId, projectId, description, date, spend, externalCost, category } = body;
+    const { stopId, projectId, description, startDate, endDate, spend, externalCost, category } = body;
 
     // Validate required fields
-    if (!stopId || !projectId || !description || !date || spend === undefined || !category) {
+    if (!stopId || !projectId || !description || !startDate || !endDate || spend === undefined || !category) {
       return NextResponse.json(
-        { error: "Missing required fields: stopId, projectId, description, date, spend, category" },
+        { error: "Missing required fields: stopId, projectId, description, startDate, endDate, spend, category" },
+        { status: 400 }
+      );
+    }
+
+    // Validate date range
+    if (startDate > endDate) {
+      return NextResponse.json(
+        { error: "End date must be after or equal to start date" },
         { status: 400 }
       );
     }
@@ -122,35 +130,52 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create the new manual cost
-    const { data: newCost, error } = await supabase
-      .from("marketing_spend")
-      .insert({
+    // Calculate number of days in range (inclusive)
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const dayCount = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+    // Divide spend equally across all days
+    const spendPerDay = Number(spend) / dayCount;
+    const externalCostPerDay = externalCost ? Number(externalCost) / dayCount : null;
+
+    // Create entries for each day in the range
+    const entries = [];
+    for (let i = 0; i < dayCount; i++) {
+      const currentDate = new Date(start);
+      currentDate.setDate(start.getDate() + i);
+      const dateStr = currentDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+
+      entries.push({
         source_type: "manual",
         project_id: projectId,
         stop_id: stopId,
         description: description.trim(),
-        date: date,
-        spend: Number(spend),
-        external_cost: externalCost ? Number(externalCost) : null,
+        date: dateStr,
+        spend: spendPerDay,
+        external_cost: externalCostPerDay,
         category: category,
         platform: null, // Manual entries don't have a platform
-      })
-      .select()
-      .single();
+      });
+    }
+
+    const { data: newCosts, error } = await supabase
+      .from("marketing_spend")
+      .insert(entries)
+      .select();
 
     if (error) {
-      console.error("Error creating manual cost:", error);
+      console.error("Error creating manual costs:", error);
       return NextResponse.json(
-        { error: "Failed to create manual cost", details: error.message },
+        { error: "Failed to create manual costs", details: error.message },
         { status: 500 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      cost: newCost,
-      message: "Manual cost created successfully",
+      costs: newCosts,
+      message: `Manual costs created successfully for ${dayCount} day${dayCount > 1 ? 's' : ''}`,
     });
   } catch (error) {
     console.error("Error in POST /api/manual-marketing-costs:", error);
