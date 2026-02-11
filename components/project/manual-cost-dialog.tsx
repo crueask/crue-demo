@@ -318,7 +318,7 @@ export function ManualCostDialog({
                 />
 
                 <div className="p-3 border-t border-gray-100 flex items-center justify-between gap-2">
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-500 min-w-[180px] h-5">
                     {tempStart && (
                       <span>
                         {format(tempStart, "d. MMM yyyy", { locale: nb })}
@@ -326,7 +326,7 @@ export function ManualCostDialog({
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 shrink-0">
                     <Button
                       variant="outline"
                       size="sm"
