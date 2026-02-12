@@ -77,7 +77,10 @@ function formatDate(dateString: string): string {
   }).format(date);
 }
 
-function formatDateRange(startDate: string, endDate: string): string {
+function formatDateRange(startDate: string | null | undefined, endDate: string | null | undefined): string {
+  if (!startDate || !endDate) {
+    return "Ukjent dato";
+  }
   if (startDate === endDate) {
     return formatDate(startDate);
   }
