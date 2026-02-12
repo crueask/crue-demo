@@ -673,10 +673,10 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
 
       {/* Expanded content */}
       {isOpen && (
-        <div className="px-3 sm:px-4 pb-3 sm:pb-4 border-t border-border/30">
+        <div className="px-4 pb-4 border-t border-border/30">
           {/* Chart Settings */}
           {stop.shows.length > 0 && (
-            <div className="mt-3 sm:mt-4">
+            <div className="mt-4">
               <ChartSettings
                 dateRange={prefs.dateRange}
                 customStartDate={prefs.customStartDate}
@@ -730,50 +730,46 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
 
           {/* Stop-level chart grouped by shows */}
           {stop.shows.length > 0 && (
-            <div className="relative mt-3 sm:mt-4 mb-6 sm:mb-8">
+            <div className="mt-4 mb-6">
               {loadingCharts ? (
-                <div className="h-[140px] sm:h-[180px] flex items-center justify-center text-xs sm:text-sm text-muted-foreground">
+                <div className="h-[180px] flex items-center justify-center text-sm text-muted-foreground">
                   Laster graf...
                 </div>
               ) : (
-                <div className="relative h-[140px] sm:h-[180px] overflow-hidden">
-                  <TicketsChart
-                    data={transformChartData(
-                      stopChartData,
-                      stop.shows.map(s => s.id)
-                    )}
-                    entities={stop.shows.map((s) => ({
-                      id: s.id,
-                      name: s.name || formatDate(s.date),
-                    }))}
-                    title="Billettutvikling per show"
-                    height={180}
-                    showEstimations={prefs.showEstimations}
-                    isCumulative={prefs.metric.includes('cumulative')}
-                    isRevenue={prefs.metric.includes('revenue')}
-                    adSpendData={stopAdSpendData}
-                    adSpendBreakdown={stopAdSpendBreakdown}
-                    revenueData={stopRevenueData}
-                    includeMva={true}
-                  />
-                </div>
+                <TicketsChart
+                  data={transformChartData(
+                    stopChartData,
+                    stop.shows.map(s => s.id)
+                  )}
+                  entities={stop.shows.map((s) => ({
+                    id: s.id,
+                    name: s.name || formatDate(s.date),
+                  }))}
+                  title="Billettutvikling per show"
+                  height={180}
+                  showEstimations={prefs.showEstimations}
+                  isCumulative={prefs.metric.includes('cumulative')}
+                  isRevenue={prefs.metric.includes('revenue')}
+                  adSpendData={stopAdSpendData}
+                  adSpendBreakdown={stopAdSpendBreakdown}
+                  revenueData={stopRevenueData}
+                  includeMva={true}
+                />
               )}
             </div>
           )}
 
           {/* Ad Connections Section */}
-          <div className="mt-6 sm:mt-8">
-            <StopAdConnections
-              stopId={stop.id}
-              stopName={stop.name}
-              projectId={stop.project_id}
-              onDataChange={onDataChange}
-            />
-          </div>
+          <StopAdConnections
+            stopId={stop.id}
+            stopName={stop.name}
+            projectId={stop.project_id}
+            onDataChange={onDataChange}
+          />
 
           {/* Shows list */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between mb-2 sm:mb-3">
+            <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Show
               </span>
