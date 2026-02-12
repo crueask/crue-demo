@@ -730,33 +730,31 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
 
           {/* Stop-level chart grouped by shows */}
           {stop.shows.length > 0 && (
-            <div className="mt-4 mb-10">
+            <div className="mt-4 mb-6">
               {loadingCharts ? (
                 <div className="h-[180px] flex items-center justify-center text-sm text-muted-foreground">
                   Laster graf...
                 </div>
               ) : (
-                <div className="h-[180px]">
-                  <TicketsChart
-                    data={transformChartData(
-                      stopChartData,
-                      stop.shows.map(s => s.id)
-                    )}
-                    entities={stop.shows.map((s) => ({
-                      id: s.id,
-                      name: s.name || formatDate(s.date),
-                    }))}
-                    title="Billettutvikling per show"
-                    height={180}
-                    showEstimations={prefs.showEstimations}
-                    isCumulative={prefs.metric.includes('cumulative')}
-                    isRevenue={prefs.metric.includes('revenue')}
-                    adSpendData={stopAdSpendData}
-                    adSpendBreakdown={stopAdSpendBreakdown}
-                    revenueData={stopRevenueData}
-                    includeMva={true}
-                  />
-                </div>
+                <TicketsChart
+                  data={transformChartData(
+                    stopChartData,
+                    stop.shows.map(s => s.id)
+                  )}
+                  entities={stop.shows.map((s) => ({
+                    id: s.id,
+                    name: s.name || formatDate(s.date),
+                  }))}
+                  title="Billettutvikling per show"
+                  height={180}
+                  showEstimations={prefs.showEstimations}
+                  isCumulative={prefs.metric.includes('cumulative')}
+                  isRevenue={prefs.metric.includes('revenue')}
+                  adSpendData={stopAdSpendData}
+                  adSpendBreakdown={stopAdSpendBreakdown}
+                  revenueData={stopRevenueData}
+                  includeMva={true}
+                />
               )}
             </div>
           )}
