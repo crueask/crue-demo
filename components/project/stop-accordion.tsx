@@ -762,12 +762,14 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
           )}
 
           {/* Ad Connections Section */}
-          <StopAdConnections
-            stopId={stop.id}
-            stopName={stop.name}
-            projectId={stop.project_id}
-            onDataChange={onDataChange}
-          />
+          <div className="mt-4 sm:mt-6">
+            <StopAdConnections
+              stopId={stop.id}
+              stopName={stop.name}
+              projectId={stop.project_id}
+              onDataChange={onDataChange}
+            />
+          </div>
 
           {/* Shows list */}
           <div className="space-y-2">
