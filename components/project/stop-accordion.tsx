@@ -736,25 +736,27 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                   Laster graf...
                 </div>
               ) : (
-                <TicketsChart
-                  data={transformChartData(
-                    stopChartData,
-                    stop.shows.map(s => s.id)
-                  )}
-                  entities={stop.shows.map((s) => ({
-                    id: s.id,
-                    name: s.name || formatDate(s.date),
-                  }))}
-                  title="Billettutvikling per show"
-                  height={180}
-                  showEstimations={prefs.showEstimations}
-                  isCumulative={prefs.metric.includes('cumulative')}
-                  isRevenue={prefs.metric.includes('revenue')}
-                  adSpendData={stopAdSpendData}
-                  adSpendBreakdown={stopAdSpendBreakdown}
-                  revenueData={stopRevenueData}
-                  includeMva={true}
-                />
+                <div className="h-[180px]">
+                  <TicketsChart
+                    data={transformChartData(
+                      stopChartData,
+                      stop.shows.map(s => s.id)
+                    )}
+                    entities={stop.shows.map((s) => ({
+                      id: s.id,
+                      name: s.name || formatDate(s.date),
+                    }))}
+                    title="Billettutvikling per show"
+                    height={180}
+                    showEstimations={prefs.showEstimations}
+                    isCumulative={prefs.metric.includes('cumulative')}
+                    isRevenue={prefs.metric.includes('revenue')}
+                    adSpendData={stopAdSpendData}
+                    adSpendBreakdown={stopAdSpendBreakdown}
+                    revenueData={stopRevenueData}
+                    includeMva={true}
+                  />
+                </div>
               )}
             </div>
           )}
