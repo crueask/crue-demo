@@ -730,13 +730,13 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
 
           {/* Stop-level chart grouped by shows */}
           {stop.shows.length > 0 && (
-            <div className="mt-3 sm:mt-4 mb-4 sm:mb-6">
+            <div className="mt-3 sm:mt-4 mb-6 sm:mb-8">
               {loadingCharts ? (
                 <div className="h-[140px] sm:h-[180px] flex items-center justify-center text-xs sm:text-sm text-muted-foreground">
                   Laster graf...
                 </div>
               ) : (
-                <div className="h-[140px] sm:h-[180px]">
+                <div className="h-[140px] sm:h-[180px] overflow-hidden">
                   <TicketsChart
                     data={transformChartData(
                       stopChartData,
@@ -762,7 +762,7 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
           )}
 
           {/* Ad Connections Section */}
-          <div className="mt-4 sm:mt-6">
+          <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-border/30">
             <StopAdConnections
               stopId={stop.id}
               stopName={stop.name}
