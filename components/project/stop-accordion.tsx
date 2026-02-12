@@ -564,84 +564,119 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
       {/* Header - clickable */}
       <button
         onClick={handleToggleOpen}
-        className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors text-left"
+        className="w-full p-3 sm:p-4 hover:bg-muted/50 transition-colors text-left"
       >
-        <div className="flex-1">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <h3 className="font-medium text-foreground">
-                {stop.shows.length > 0 && (
-                  <span className="text-muted-foreground font-normal">{getDateRangeLabel()} – </span>
+        <div className="flex items-start gap-2 sm:gap-3">
+          {/* Main content */}
+          <div className="flex-1 min-w-0">
+            {/* Title row */}
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-medium text-foreground text-sm sm:text-base break-words">
+                  {stop.shows.length > 0 && (
+                    <span className="text-muted-foreground font-normal text-xs sm:text-sm">
+                      {getDateRangeLabel()} –{" "}
+                    </span>
+                  )}
+                  {stop.name}
+                </h3>
+                {/* Phase selector on mobile - below title */}
+                {phases.length > 0 && (
+                  <div className="mt-1.5 sm:hidden">
+                    <PhaseSelector
+                      stopId={stop.id}
+                      currentPhase={stop.phase || null}
+                      phases={phases}
+                      onPhaseChange={onDataChange}
+                      compact
+                    />
+                  </div>
                 )}
-                {stop.name}
-              </h3>
+              </div>
+              {/* Phase selector on desktop - inline */}
               {phases.length > 0 && (
-                <PhaseSelector
-                  stopId={stop.id}
-                  currentPhase={stop.phase || null}
-                  phases={phases}
-                  onPhaseChange={onDataChange}
-                  compact
-                />
+                <div className="hidden sm:block flex-shrink-0">
+                  <PhaseSelector
+                    stopId={stop.id}
+                    currentPhase={stop.phase || null}
+                    phases={phases}
+                    onPhaseChange={onDataChange}
+                    compact
+                  />
+                </div>
               )}
             </div>
-            <span className="text-sm text-muted-foreground">{fillRate}%</span>
+
+            {/* Metrics row - wraps on mobile */}
+            <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground mb-2">
+              <span className="whitespace-nowrap">{stop.shows.length} show</span>
+              <span className="flex items-center gap-1 sm:gap-1.5 text-gray-700 font-medium px-1.5 sm:px-2 py-0.5 rounded-md bg-gray-100 whitespace-nowrap">
+                <TrendingUp className="h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0" />
+                <span className="text-xs sm:text-sm">{formatCurrency(totalRevenue)}</span>
+              </span>
+              {canViewAdSpend && stop.totalAdSpend && stop.totalAdSpend.total > 0 && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="flex items-center gap-1 sm:gap-1.5 text-blue-700 font-medium cursor-default px-1.5 sm:px-2 py-0.5 rounded-md bg-blue-50 whitespace-nowrap">
+                        <Megaphone className="h-3 w-3 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm">{formatCurrency(applyMva(stop.totalAdSpend.total, true))}</span>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="font-medium mb-1">Annonsekostnader (inkl. mva)</p>
+                      {Object.entries(stop.totalAdSpend.bySource)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([source, spend]) => (
+                          <p key={source}>
+                            {getSourceLabel(source)}: {formatCurrency(applyMva(spend, true))}
+                          </p>
+                        ))}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
+
+            {/* Progress bar with percentage */}
+            <div className="flex items-center gap-2">
+              <Progress value={fillRate} className="h-2 bg-muted flex-1" />
+              <span className="text-xs sm:text-sm text-muted-foreground font-medium tabular-nums flex-shrink-0 w-10 text-right">
+                {fillRate}%
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-sm text-muted-foreground mb-2">
-            <span>{stop.shows.length} show</span>
-            <span className="flex items-center gap-1.5 text-gray-700 font-medium px-2 py-0.5 rounded-md bg-gray-100">
-              <TrendingUp className="h-3.5 w-3.5" />
-              {formatCurrency(totalRevenue)}
-            </span>
-            {canViewAdSpend && stop.totalAdSpend && stop.totalAdSpend.total > 0 && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="flex items-center gap-1.5 text-blue-700 font-medium cursor-default px-2 py-0.5 rounded-md bg-blue-50">
-                      <Megaphone className="h-3 w-3" />
-                      {formatCurrency(applyMva(stop.totalAdSpend.total, true))}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="font-medium mb-1">Annonsekostnader (inkl. mva)</p>
-                    {Object.entries(stop.totalAdSpend.bySource)
-                      .sort(([, a], [, b]) => b - a)
-                      .map(([source, spend]) => (
-                        <p key={source}>
-                          {getSourceLabel(source)}: {formatCurrency(applyMva(spend, true))}
-                        </p>
-                      ))}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+
+          {/* Right side actions */}
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleDeleteStop} className="text-red-600">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Slett stopp
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {isOpen ? (
+              <ChevronUp className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground/70" />
+            ) : (
+              <ChevronDown className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground/70" />
             )}
           </div>
-          <Progress value={fillRate} className="h-2 bg-muted" />
-        </div>
-        <div className="ml-4 flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleDeleteStop} className="text-red-600">
-                <Trash2 className="mr-2 h-4 w-4" />
-                Slett stopp
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {isOpen ? <ChevronUp className="h-5 w-5 text-muted-foreground/70" /> : <ChevronDown className="h-5 w-5 text-muted-foreground/70" />}
         </div>
       </button>
 
       {/* Expanded content */}
       {isOpen && (
-        <div className="px-4 pb-4 border-t border-border/30">
+        <div className="px-3 sm:px-4 pb-3 sm:pb-4 border-t border-border/30">
           {/* Chart Settings */}
           {stop.shows.length > 0 && (
-            <div className="mt-4">
+            <div className="mt-3 sm:mt-4">
               <ChartSettings
                 dateRange={prefs.dateRange}
                 customStartDate={prefs.customStartDate}
@@ -695,31 +730,33 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
 
           {/* Stop-level chart grouped by shows */}
           {stop.shows.length > 0 && (
-            <div className="mt-4 mb-6">
+            <div className="mt-3 sm:mt-4 mb-4 sm:mb-6">
               {loadingCharts ? (
-                <div className="h-[180px] flex items-center justify-center text-sm text-muted-foreground">
+                <div className="h-[140px] sm:h-[180px] flex items-center justify-center text-xs sm:text-sm text-muted-foreground">
                   Laster graf...
                 </div>
               ) : (
-                <TicketsChart
-                  data={transformChartData(
-                    stopChartData,
-                    stop.shows.map(s => s.id)
-                  )}
-                  entities={stop.shows.map((s) => ({
-                    id: s.id,
-                    name: s.name || formatDate(s.date),
-                  }))}
-                  title="Billettutvikling per show"
-                  height={180}
-                  showEstimations={prefs.showEstimations}
-                  isCumulative={prefs.metric.includes('cumulative')}
-                  isRevenue={prefs.metric.includes('revenue')}
-                  adSpendData={stopAdSpendData}
-                  adSpendBreakdown={stopAdSpendBreakdown}
-                  revenueData={stopRevenueData}
-                  includeMva={true}
-                />
+                <div className="h-[140px] sm:h-[180px]">
+                  <TicketsChart
+                    data={transformChartData(
+                      stopChartData,
+                      stop.shows.map(s => s.id)
+                    )}
+                    entities={stop.shows.map((s) => ({
+                      id: s.id,
+                      name: s.name || formatDate(s.date),
+                    }))}
+                    title="Billettutvikling per show"
+                    height={180}
+                    showEstimations={prefs.showEstimations}
+                    isCumulative={prefs.metric.includes('cumulative')}
+                    isRevenue={prefs.metric.includes('revenue')}
+                    adSpendData={stopAdSpendData}
+                    adSpendBreakdown={stopAdSpendBreakdown}
+                    revenueData={stopRevenueData}
+                    includeMva={true}
+                  />
+                </div>
               )}
             </div>
           )}
@@ -734,7 +771,7 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
 
           {/* Shows list */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Show
               </span>
@@ -754,86 +791,161 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                 return (
                   <div key={show.id} className="border border-border/30 rounded-lg">
                     {/* Show header row */}
-                    <div className="flex items-center gap-4 p-3">
-                      {/* Expand button */}
-                      <button
-                        onClick={() => toggleShowExpanded(show.id)}
-                        className="p-1 hover:bg-muted rounded transition-colors"
-                      >
-                        {isShowExpanded ? (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground/70" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 text-muted-foreground/70" />
-                        )}
-                      </button>
+                    <div className="p-2.5 sm:p-3">
+                      {/* Mobile layout */}
+                      <div className="sm:hidden">
+                        <div className="flex items-start gap-2">
+                          {/* Expand button */}
+                          <button
+                            onClick={() => toggleShowExpanded(show.id)}
+                            className="p-1 hover:bg-muted rounded transition-colors flex-shrink-0"
+                          >
+                            {isShowExpanded ? (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground/70" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-muted-foreground/70" />
+                            )}
+                          </button>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 text-sm">
-                          <span className="font-medium text-foreground">
-                            {show.name || `${formatDate(show.date)} ${stop.name}`}
-                          </span>
-                          {show.time && (
-                            <span className="text-muted-foreground">{formatTime(show.time)}</span>
-                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs sm:text-sm font-medium text-foreground break-words">
+                                  {show.name || `${formatDate(show.date)} ${stop.name}`}
+                                </div>
+                                {show.time && (
+                                  <div className="text-xs text-muted-foreground mt-0.5">
+                                    {formatTime(show.time)}
+                                  </div>
+                                )}
+                              </div>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => openReportsDialog(show)}>
+                                    <FileText className="mr-2 h-4 w-4" />
+                                    Se rapporter
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => openEditShowDialog(show)}>
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Rediger show
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    onClick={() => handleDeleteShow(show.id)}
+                                    className="text-red-600"
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Slett show
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <Progress value={showFillRate} className="h-1.5 bg-muted flex-1" />
+                              <span className="text-xs text-muted-foreground font-medium tabular-nums flex-shrink-0">
+                                {showFillRate}%
+                              </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1.5">
+                              {formatNumber(show.tickets_sold)}
+                              {show.capacity && (
+                                <span>/{formatNumber(show.capacity)}</span>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="w-32">
-                        <Progress value={showFillRate} className="h-1.5 bg-muted" />
+
+                      {/* Desktop layout */}
+                      <div className="hidden sm:flex items-center gap-4">
+                        {/* Expand button */}
+                        <button
+                          onClick={() => toggleShowExpanded(show.id)}
+                          className="p-1 hover:bg-muted rounded transition-colors"
+                        >
+                          {isShowExpanded ? (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground/70" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-muted-foreground/70" />
+                          )}
+                        </button>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="font-medium text-foreground">
+                              {show.name || `${formatDate(show.date)} ${stop.name}`}
+                            </span>
+                            {show.time && (
+                              <span className="text-muted-foreground">{formatTime(show.time)}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="w-32">
+                          <Progress value={showFillRate} className="h-1.5 bg-muted" />
+                        </div>
+                        <div className="w-12 text-right text-sm text-muted-foreground">
+                          {showFillRate}%
+                        </div>
+                        <div className="w-20 text-right text-sm text-foreground">
+                          {formatNumber(show.tickets_sold)}
+                          {show.capacity && (
+                            <span className="text-muted-foreground/70">/{formatNumber(show.capacity)}</span>
+                          )}
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openReportsDialog(show)}>
+                              <FileText className="mr-2 h-4 w-4" />
+                              Se rapporter
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => openEditShowDialog(show)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Rediger show
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteShow(show.id)}
+                              className="text-red-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Slett show
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
-                      <div className="w-12 text-right text-sm text-muted-foreground">
-                        {showFillRate}%
-                      </div>
-                      <div className="w-20 text-right text-sm text-foreground">
-                        {formatNumber(show.tickets_sold)}
-                        {show.capacity && (
-                          <span className="text-muted-foreground/70">/{formatNumber(show.capacity)}</span>
-                        )}
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openReportsDialog(show)}>
-                            <FileText className="mr-2 h-4 w-4" />
-                            Se rapporter
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openEditShowDialog(show)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Rediger show
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteShow(show.id)}
-                            className="text-red-600"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Slett show
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                     </div>
 
                     {/* Expanded show chart */}
                     {isShowExpanded && (
-                      <div className="px-3 pb-3 pt-1 border-t border-gray-50">
+                      <div className="px-2 sm:px-3 pb-2 sm:pb-3 pt-1 border-t border-gray-50">
                         {showChartData[show.id] ? (
-                          <TicketsChart
-                            data={transformChartData(
-                              showChartData[show.id],
-                              [show.id]
-                            )}
-                            entities={[{ id: show.id, name: "Billetter" }]}
-                            title={`Billettutvikling - ${show.name || formatDate(show.date)}`}
-                            height={150}
-                            showEstimations={prefs.showEstimations}
-                            isCumulative={prefs.metric.includes('cumulative')}
-                            isRevenue={prefs.metric.includes('revenue')}
-                          />
+                          <div className="h-[120px] sm:h-[150px]">
+                            <TicketsChart
+                              data={transformChartData(
+                                showChartData[show.id],
+                                [show.id]
+                              )}
+                              entities={[{ id: show.id, name: "Billetter" }]}
+                              title={`Billettutvikling - ${show.name || formatDate(show.date)}`}
+                              height={150}
+                              showEstimations={prefs.showEstimations}
+                              isCumulative={prefs.metric.includes('cumulative')}
+                              isRevenue={prefs.metric.includes('revenue')}
+                            />
+                          </div>
                         ) : (
-                          <div className="h-[150px] flex items-center justify-center text-sm text-muted-foreground">
+                          <div className="h-[120px] sm:h-[150px] flex items-center justify-center text-xs sm:text-sm text-muted-foreground">
                             Laster graf...
                           </div>
                         )}
