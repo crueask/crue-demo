@@ -211,6 +211,7 @@ Use this to create visual representations of data and comparisons.`,
                   label: { type: "string", description: "Display label" },
                   color: { type: "string", description: "Color for the series (hex or named)" },
                   type: { type: "string", enum: ["bar", "line", "area"], description: "Type for composed charts" },
+                  yAxisId: { type: "string", enum: ["left", "right"], description: "Which Y-axis to use. Use 'right' for a second axis when mixing metrics with different scales (e.g., ad spend vs ticket count)" },
                 },
                 required: ["key", "label"],
               },
@@ -455,6 +456,7 @@ export interface ChartConfig {
       label: string;
       color?: string;
       type?: "bar" | "line" | "area";
+      yAxisId?: "left" | "right";
     }>;
     stacked?: boolean;
     showLegend?: boolean;

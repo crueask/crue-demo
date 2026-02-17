@@ -74,9 +74,12 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
   };
 
   const renderChart = () => {
+    // Detect if any series uses a right Y-axis
+    const hasDualYAxis = chartConfig.yAxis.some(y => y.yAxisId === "right");
+
     const commonProps = {
       data,
-      margin: { top: 10, right: 10, left: 0, bottom: 0 },
+      margin: { top: 10, right: hasDualYAxis ? 10 : 10, left: 0, bottom: 0 },
     };
 
     const commonAxisProps = {
@@ -88,7 +91,15 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
           axisLine={{ stroke: "#E5E7EB" }}
         />
       ),
-      yAxis: (
+      yAxis: hasDualYAxis ? (
+        <YAxis
+          yAxisId="left"
+          tick={{ fontSize: 11, fill: "#6B7280" }}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={formatValue}
+        />
+      ) : (
         <YAxis
           tick={{ fontSize: 11, fill: "#6B7280" }}
           tickLine={false}
@@ -96,6 +107,16 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
           tickFormatter={formatValue}
         />
       ),
+      yAxisRight: hasDualYAxis ? (
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          tick={{ fontSize: 11, fill: "#6B7280" }}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={formatValue}
+        />
+      ) : null,
       grid: <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />,
       tooltip: (
         <Tooltip
@@ -134,6 +155,7 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
             {commonAxisProps.grid}
             {commonAxisProps.xAxis}
             {commonAxisProps.yAxis}
+            {commonAxisProps.yAxisRight}
             {commonAxisProps.tooltip}
             {commonAxisProps.legend}
             {chartConfig.yAxis.map((y, i) => (
@@ -143,6 +165,7 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
                 fill={getColor(i, y.color)}
                 radius={[4, 4, 0, 0]}
                 stackId={chartConfig.stacked ? "stack" : undefined}
+                yAxisId={hasDualYAxis ? (y.yAxisId || "left") : undefined}
               />
             ))}
           </BarChart>
@@ -154,6 +177,7 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
             {commonAxisProps.grid}
             {commonAxisProps.xAxis}
             {commonAxisProps.yAxis}
+            {commonAxisProps.yAxisRight}
             {commonAxisProps.tooltip}
             {commonAxisProps.legend}
             {chartConfig.yAxis.map((y, i) => (
@@ -165,6 +189,7 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
                 strokeWidth={2}
                 dot={false}
                 activeDot={{ r: 4, fill: getColor(i, y.color) }}
+                yAxisId={hasDualYAxis ? (y.yAxisId || "left") : undefined}
               />
             ))}
           </LineChart>
@@ -176,6 +201,7 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
             {commonAxisProps.grid}
             {commonAxisProps.xAxis}
             {commonAxisProps.yAxis}
+            {commonAxisProps.yAxisRight}
             {commonAxisProps.tooltip}
             {commonAxisProps.legend}
             {chartConfig.yAxis.map((y, i) => (
@@ -188,6 +214,7 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
                 stroke={getColor(i, y.color)}
                 strokeWidth={2}
                 stackId={chartConfig.stacked ? "stack" : undefined}
+                yAxisId={hasDualYAxis ? (y.yAxisId || "left") : undefined}
               />
             ))}
           </AreaChart>
@@ -199,10 +226,12 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
             {commonAxisProps.grid}
             {commonAxisProps.xAxis}
             {commonAxisProps.yAxis}
+            {commonAxisProps.yAxisRight}
             {commonAxisProps.tooltip}
             {commonAxisProps.legend}
             {chartConfig.yAxis.map((y, i) => {
               const color = getColor(i, y.color);
+              const axisId = hasDualYAxis ? (y.yAxisId || "left") : undefined;
               switch (y.type) {
                 case "line":
                   return (
@@ -213,6 +242,7 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
                       stroke={color}
                       strokeWidth={2}
                       dot={false}
+                      yAxisId={axisId}
                     />
                   );
                 case "area":
@@ -224,6 +254,7 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
                       fill={color}
                       fillOpacity={0.3}
                       stroke={color}
+                      yAxisId={axisId}
                     />
                   );
                 default:
@@ -234,6 +265,7 @@ export function MotleyChartRenderer({ config }: MotleyChartRendererProps) {
                       fill={color}
                       radius={[4, 4, 0, 0]}
                       stackId={chartConfig.stacked ? "stack" : undefined}
+                      yAxisId={axisId}
                     />
                   );
               }
