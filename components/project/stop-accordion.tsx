@@ -37,6 +37,7 @@ import { TicketsChart } from "@/components/project/tickets-chart";
 import { StopAdConnections } from "@/components/project/stop-ad-connections";
 import { PhaseSelector } from "@/components/project/phase-selector";
 import { ChartSettings } from "@/components/chart/chart-settings";
+import { ChartSkeleton } from "@/components/ui/chart-skeleton";
 import { getStopMarketingCostsWithBreakdown, applyMva, getSourceLabel, type StopAdSpendTotal } from "@/lib/ad-spend";
 import {
   expandDistributionRanges,
@@ -127,12 +128,21 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
   // Reload chart data when accordion opens or preferences change
   useEffect(() => {
     if (isOpen) {
-      // Clear existing data to force reload with new preferences
+      setLoadingCharts(true);
       setStopChartData([]);
       setShowChartData({});
       loadStopChartData();
     }
   }, [isOpen, prefs.dateRange, prefs.customStartDate, prefs.customEndDate, prefs.distributionWeight]);
+
+  // Reload expanded show charts when preferences change
+  useEffect(() => {
+    if (isOpen && expandedShows.size > 0) {
+      for (const showId of expandedShows) {
+        loadShowChartData(showId);
+      }
+    }
+  }, [prefs.dateRange, prefs.customStartDate, prefs.customEndDate, prefs.distributionWeight]);
 
   // Reports dialog state
   const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
@@ -246,8 +256,6 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
   };
 
   async function loadStopChartData() {
-    if (stopChartData.length > 0) return; // Already loaded
-
     setLoadingCharts(true);
     const supabase = createClient();
 
@@ -350,8 +358,6 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
   }
 
   async function loadShowChartData(showId: string) {
-    if (showChartData[showId]) return; // Already loaded
-
     const supabase = createClient();
     const show = stop.shows.find(s => s.id === showId);
     if (!show) return;
@@ -433,12 +439,8 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
     });
   }
 
-  async function handleToggleOpen() {
-    const newIsOpen = !isOpen;
-    setIsOpen(newIsOpen);
-    if (newIsOpen) {
-      loadStopChartData();
-    }
+  function handleToggleOpen() {
+    setIsOpen(!isOpen);
   }
 
   async function loadTickets(showId: string) {
@@ -732,8 +734,8 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
           {stop.shows.length > 0 && (
             <div className="mt-4 mb-6">
               {loadingCharts ? (
-                <div className="h-[180px] flex items-center justify-center text-sm text-muted-foreground">
-                  Laster graf...
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <ChartSkeleton height={180} />
                 </div>
               ) : (
                 <TicketsChart
@@ -927,24 +929,22 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                     {/* Expanded show chart */}
                     {isShowExpanded && (
                       <div className="px-2 sm:px-3 pb-2 sm:pb-3 pt-1 border-t border-gray-50">
-                        {showChartData[show.id] ? (
-                          <div className="h-[120px] sm:h-[150px]">
-                            <TicketsChart
-                              data={transformChartData(
-                                showChartData[show.id],
-                                [show.id]
-                              )}
-                              entities={[{ id: show.id, name: "Billetter" }]}
-                              title={`Billettutvikling - ${show.name || formatDate(show.date)}`}
-                              height={150}
-                              showEstimations={prefs.showEstimations}
-                              isCumulative={prefs.metric.includes('cumulative')}
-                              isRevenue={prefs.metric.includes('revenue')}
-                            />
-                          </div>
+                        {showChartData[show.id] && showChartData[show.id].length > 0 ? (
+                          <TicketsChart
+                            data={transformChartData(
+                              showChartData[show.id],
+                              [show.id]
+                            )}
+                            entities={[{ id: show.id, name: "Billetter" }]}
+                            title={`Billettutvikling - ${show.name || formatDate(show.date)}`}
+                            height={150}
+                            showEstimations={prefs.showEstimations}
+                            isCumulative={prefs.metric.includes('cumulative')}
+                            isRevenue={prefs.metric.includes('revenue')}
+                          />
                         ) : (
-                          <div className="h-[120px] sm:h-[150px] flex items-center justify-center text-xs sm:text-sm text-muted-foreground">
-                            Laster graf...
+                          <div className="bg-white rounded-lg border border-gray-200 p-4">
+                            <ChartSkeleton height={120} />
                           </div>
                         )}
                       </div>

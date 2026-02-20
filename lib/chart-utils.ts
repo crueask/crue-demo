@@ -77,7 +77,12 @@ export function loadChartPreferences(): ChartPreferences {
   const saved = localStorage.getItem(CHART_PREFS_KEY);
   if (saved) {
     try {
-      return { ...defaultChartPreferences, ...JSON.parse(saved) };
+      const parsed = { ...defaultChartPreferences, ...JSON.parse(saved) };
+      // Always reset date range to default 14d on page load
+      parsed.dateRange = defaultChartPreferences.dateRange;
+      parsed.customStartDate = undefined;
+      parsed.customEndDate = undefined;
+      return parsed;
     } catch {
       return defaultChartPreferences;
     }
