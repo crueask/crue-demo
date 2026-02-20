@@ -37,7 +37,7 @@ import { TicketsChart } from "@/components/project/tickets-chart";
 import { StopAdConnections } from "@/components/project/stop-ad-connections";
 import { PhaseSelector } from "@/components/project/phase-selector";
 import { ChartSettings } from "@/components/chart/chart-settings";
-import { ChartSkeleton } from "@/components/ui/chart-skeleton";
+import { ChartSkeleton, LegendSkeleton } from "@/components/ui/chart-skeleton";
 import { getStopMarketingCostsWithBreakdown, applyMva, getSourceLabel, type StopAdSpendTotal } from "@/lib/ad-spend";
 import {
   expandDistributionRanges,
@@ -735,7 +735,9 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
             <div className="mt-4 mb-6">
               {loadingCharts ? (
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <div className="h-4 w-44 bg-gray-200/40 rounded mb-4" />
                   <ChartSkeleton height={180} />
+                  <LegendSkeleton itemCount={Math.min(stop.shows.length, 8)} />
                 </div>
               ) : (
                 <TicketsChart
@@ -944,6 +946,7 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                           />
                         ) : (
                           <div className="bg-white rounded-lg border border-gray-200 p-4">
+                            <div className="h-4 w-44 bg-gray-200/40 rounded mb-4" />
                             <ChartSkeleton height={120} />
                           </div>
                         )}

@@ -55,7 +55,7 @@ interface LegendSkeletonProps {
 
 export function LegendSkeleton({ itemCount = 6 }: LegendSkeletonProps) {
   return (
-    <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-100 overflow-x-auto scrollbar-hide">
+    <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100 overflow-x-auto scrollbar-hide">
       <div className="flex items-center gap-4 flex-nowrap">
         {Array.from({ length: itemCount }).map((_, i) => (
           <div key={i} className="flex items-center gap-2 flex-shrink-0">
