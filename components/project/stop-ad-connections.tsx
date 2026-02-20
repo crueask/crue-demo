@@ -556,6 +556,11 @@ export function StopAdConnections({
                             )}
                           </div>
                           <div className="flex items-center gap-2 ml-3">
+                            {connectionSpends[conn.id] != null && connectionSpends[conn.id] > 0 && (
+                              <span className="text-sm text-gray-500 tabular-nums">
+                                {formatCurrency(applyMva(connectionSpends[conn.id], true))}
+                              </span>
+                            )}
                             {isSuperAdmin ? (
                               <>
                                 {isEditing ? (
