@@ -641,13 +641,13 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
                 )}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <div className="w-20 sm:w-28">
+                <div className="w-24 sm:w-32">
                   <Progress value={fillRate} className="h-1.5 bg-muted" />
                 </div>
-                <span className="text-xs sm:text-sm text-muted-foreground font-medium tabular-nums">
+                <span className="w-8 sm:w-10 text-right text-xs sm:text-sm text-muted-foreground font-medium tabular-nums">
                   {fillRate}%
                 </span>
-                <span className="text-xs sm:text-sm text-foreground tabular-nums">
+                <span className="w-16 sm:w-24 text-right text-xs sm:text-sm text-foreground tabular-nums">
                   {formatNumber(totalTicketsSold)}
                   {totalCapacity > 0 && (
                     <span className="text-muted-foreground/70">/{formatNumber(totalCapacity)}</span>
