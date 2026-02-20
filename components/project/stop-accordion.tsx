@@ -640,11 +640,19 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
               )}
             </div>
 
-            {/* Progress bar with percentage */}
+            {/* Progress bar with percentage and sold/capacity */}
             <div className="flex items-center gap-2">
-              <Progress value={fillRate} className="h-2 bg-muted flex-1" />
-              <span className="text-xs sm:text-sm text-muted-foreground font-medium tabular-nums flex-shrink-0 w-10 text-right">
+              <div className="w-24 sm:w-32">
+                <Progress value={fillRate} className="h-1.5 bg-muted" />
+              </div>
+              <span className="text-xs sm:text-sm text-muted-foreground font-medium tabular-nums flex-shrink-0">
                 {fillRate}%
+              </span>
+              <span className="text-xs sm:text-sm text-foreground tabular-nums flex-shrink-0">
+                {formatNumber(totalTicketsSold)}
+                {totalCapacity > 0 && (
+                  <span className="text-muted-foreground/70">/{formatNumber(totalCapacity)}</span>
+                )}
               </span>
             </div>
           </div>
