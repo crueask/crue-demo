@@ -609,51 +609,51 @@ export function StopAccordion({ stop, phases, onDataChange, canViewAdSpend }: St
               )}
             </div>
 
-            {/* Metrics row - wraps on mobile */}
-            <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground mb-2">
-              <span className="whitespace-nowrap">{stop.shows.length} show</span>
-              <span className="flex items-center gap-1 sm:gap-1.5 text-gray-700 font-medium px-1.5 sm:px-2 py-0.5 rounded-md bg-gray-100 whitespace-nowrap">
-                <TrendingUp className="h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0" />
-                <span className="text-xs sm:text-sm">{formatCurrency(totalRevenue)}</span>
-              </span>
-              {canViewAdSpend && stop.totalAdSpend && stop.totalAdSpend.total > 0 && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="flex items-center gap-1 sm:gap-1.5 text-blue-700 font-medium cursor-default px-1.5 sm:px-2 py-0.5 rounded-md bg-blue-50 whitespace-nowrap">
-                        <Megaphone className="h-3 w-3 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm">{formatCurrency(applyMva(stop.totalAdSpend.total, true))}</span>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="font-medium mb-1">Annonsekostnader (inkl. mva)</p>
-                      {Object.entries(stop.totalAdSpend.bySource)
-                        .sort(([, a], [, b]) => b - a)
-                        .map(([source, spend]) => (
-                          <p key={source}>
-                            {getSourceLabel(source)}: {formatCurrency(applyMva(spend, true))}
-                          </p>
-                        ))}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-            </div>
-
-            {/* Progress bar with percentage and sold/capacity */}
-            <div className="flex items-center gap-2">
-              <div className="w-24 sm:w-32">
-                <Progress value={fillRate} className="h-1.5 bg-muted" />
-              </div>
-              <span className="text-xs sm:text-sm text-muted-foreground font-medium tabular-nums flex-shrink-0">
-                {fillRate}%
-              </span>
-              <span className="text-xs sm:text-sm text-foreground tabular-nums flex-shrink-0">
-                {formatNumber(totalTicketsSold)}
-                {totalCapacity > 0 && (
-                  <span className="text-muted-foreground/70">/{formatNumber(totalCapacity)}</span>
+            {/* Metrics row with progress bar on right */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+                <span className="whitespace-nowrap">{stop.shows.length} show</span>
+                <span className="flex items-center gap-1 sm:gap-1.5 text-gray-700 font-medium px-1.5 sm:px-2 py-0.5 rounded-md bg-gray-100 whitespace-nowrap">
+                  <TrendingUp className="h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0" />
+                  <span className="text-xs sm:text-sm">{formatCurrency(totalRevenue)}</span>
+                </span>
+                {canViewAdSpend && stop.totalAdSpend && stop.totalAdSpend.total > 0 && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="flex items-center gap-1 sm:gap-1.5 text-blue-700 font-medium cursor-default px-1.5 sm:px-2 py-0.5 rounded-md bg-blue-50 whitespace-nowrap">
+                          <Megaphone className="h-3 w-3 flex-shrink-0" />
+                          <span className="text-xs sm:text-sm">{formatCurrency(applyMva(stop.totalAdSpend.total, true))}</span>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="font-medium mb-1">Annonsekostnader (inkl. mva)</p>
+                        {Object.entries(stop.totalAdSpend.bySource)
+                          .sort(([, a], [, b]) => b - a)
+                          .map(([source, spend]) => (
+                            <p key={source}>
+                              {getSourceLabel(source)}: {formatCurrency(applyMva(spend, true))}
+                            </p>
+                          ))}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
-              </span>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="w-20 sm:w-28">
+                  <Progress value={fillRate} className="h-1.5 bg-muted" />
+                </div>
+                <span className="text-xs sm:text-sm text-muted-foreground font-medium tabular-nums">
+                  {fillRate}%
+                </span>
+                <span className="text-xs sm:text-sm text-foreground tabular-nums">
+                  {formatNumber(totalTicketsSold)}
+                  {totalCapacity > 0 && (
+                    <span className="text-muted-foreground/70">/{formatNumber(totalCapacity)}</span>
+                  )}
+                </span>
+              </div>
             </div>
           </div>
 
